@@ -92,7 +92,7 @@
 		    const links = document.querySelectorAll(self.options.selector);
 		    links.forEach(function(link){
 			    link.addEventListener("click", function(e){
-				    if (self.open(e.target)){
+				    if (self.open(link)){
 					    e.preventDefault();
 				    }
 			    });
@@ -105,6 +105,16 @@
 	     * @returns {boolean}
 	     */
 	    static open(link){
+			
+			// check if the link is an a tag
+			if (link.tagName !== "A") {
+				// link could be a span within the anchor. Make sure to get the anchor href.
+				link = link.closest("a");
+			}
+
+			//check that the link has an href
+			if (!link.href) return false;
+
 		    const parsed = this.parse(link.href);
 		    if (parsed){
 			    const plugin = this.options.plugins.find(function(p){

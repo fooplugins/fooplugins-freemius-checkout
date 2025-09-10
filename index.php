@@ -2,14 +2,14 @@
 /**
  * Plugin Name: FooPlugins Freemius Checkout Plugin
  * Description: A plugin for Freemius checkout on FooPlugins
- * Version:     2.0.2
+ * Version:     2.0.3
  * Author:      Brad Vincent
  * Author URI:  https://fooplugins.com
  * License:     GPL-2.0+
  * License URI: http://www.gnu.org/licenses/gpl-2.0.txt
  */
 
-DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_VERSION', '2.0.1' );
+DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_VERSION', '2.0.3' );
 DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_SCRIPT_HANDLE', 'fooplugins-freemius-checkout' );
 define( 'FOOPLUGINS_FREEMIUS_CHECKOUT_URL', plugin_dir_url( __FILE__ ) );
 
@@ -52,6 +52,16 @@ function fooplugins_wp_enqueue_scripts() {
 				'product_id' => 3787,
 				'public_key' => "pk_d759d76877964aea0c0fcae6e69ca",
 				'product_name' => "FooTable jQuery Developer"
+			],
+			[
+				'product_id' => 18179,
+				'public_key' => "pk_6a87f6f1b0ed7d17e2d402356a089",
+				'product_name' => "PRO Commerce Bundle"
+			],
+			[
+				'product_id' => 20634,
+				'public_key' => "pk_2a10e2105e540cbac4e28f74c60f5",
+				'product_name' => "FooPlugins Business Bundle"
 			]
 		],
 		'success_url' => site_url("/purchase-thanks/"),
@@ -68,7 +78,7 @@ function fooplugins_wp_enqueue_scripts() {
 	wp_register_script(
 		FOOPLUGINS_FREEMIUS_CHECKOUT_SCRIPT_HANDLE,
 		FOOPLUGINS_FREEMIUS_CHECKOUT_URL . 'js/fooplugins-freemius.js',
-		array( 'jquery', 'freemius-checkout-external' ),
+		array( 'freemius-checkout-external' ),
 		FOOPLUGINS_FREEMIUS_CHECKOUT_VERSION,
 		true);
 
