@@ -2,14 +2,14 @@
 /**
  * Plugin Name: FooPlugins Freemius Checkout Plugin
  * Description: A plugin for Freemius checkout on FooPlugins
- * Version:     2.0.3
+ * Version:     2.0.4
  * Author:      Brad Vincent
  * Author URI:  https://fooplugins.com
  * License:     GPL-2.0+
  * License URI: http://www.gnu.org/licenses/gpl-2.0.txt
  */
 
-DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_VERSION', '2.0.3' );
+DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_VERSION', '2.0.4' );
 DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_SCRIPT_HANDLE', 'fooplugins-freemius-checkout' );
 define( 'FOOPLUGINS_FREEMIUS_CHECKOUT_URL', plugin_dir_url( __FILE__ ) );
 
