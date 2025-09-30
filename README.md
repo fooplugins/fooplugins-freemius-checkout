@@ -57,12 +57,12 @@ License Example:
 
 Trial Example:
  ```html
- <a href="https://checkout.freemius.com/plugin/843/plan/14086/?trial=true">Try</a>
+ <a href="https://checkout.freemius.com/plugin/843/plan/14086/?trial=free">Try for free</a>
  ```
 
  Coupon Example:
  ```html
- <a href="https://checkout.freemius.com/plugin/843/plan/14086/?coupon=FOO">Buy</a>
+ <a href="https://checkout.freemius.com/plugin/843/plan/14086/?coupon=FOO">Buy with coupon</a>
  ```
 
 ### Freemius Documentation
