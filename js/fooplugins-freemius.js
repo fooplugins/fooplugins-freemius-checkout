@@ -39,7 +39,7 @@
 	    static #REGEX = {
 		    plugin_plan_licenses: /\/(?:plugin|bundle)\/(\d+?)\/plan\/(\d+?)(?:\/licenses\/(\d+?))?(?:\/|$)/,
 		    billing_cycle: /[?&]billing_cycle=(monthly|annual|lifetime)(?:$|&)/,
-		    trial: /[?&]trial=(1|true)($|&)/,
+		    trial: /[?&]trial=(\w+)(?:$|&)/,
 			coupon: /[?&]coupon=(\w+)(?:$|&)/
 	    };
 
@@ -134,7 +134,7 @@
 	    /**
 	     * Parses the supplied href into the options required to open a Freemius checkout.
 	     * @param {string} href
-	     * @returns {{product_id: number, licenses: number, billing_cycle: string, plan_id: number, trial: boolean}}
+	     * @returns {{product_id: number, licenses: number, billing_cycle: string, plan_id: number, trial: string, coupon: string}}
 	     */
 	    static parse(href){
 		    const result = href.match(this.#REGEX.plugin_plan_licenses);
@@ -149,12 +149,17 @@
 			    if (coupon_match !== null){
 				    coupon = coupon_match[1];
 			    }
+				const trial_match = href.match(this.#REGEX.trial);
+			    let trial = undefined;
+			    if (trial_match !== null){
+				    trial = trial_match[1];
+			    }
 			    return {
 				    product_id: parseInt(result[1]),
 				    plan_id: parseInt(result[2]),
 				    licenses: result[3] ? parseInt(result[3]) : 1, // Default to 1 license if not specified
 				    billing_cycle: billing_cycle,
-				    trial: this.#REGEX.trial.test(href),
+				    trial,
 					coupon
 			    };
 		    }
