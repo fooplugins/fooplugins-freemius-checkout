@@ -2,14 +2,14 @@
 /**
  * Plugin Name: FooPlugins Freemius Checkout Plugin
  * Description: A plugin for Freemius checkout on FooPlugins
- * Version:     2.0.4
+ * Version:     2.0.5
  * Author:      Brad Vincent
  * Author URI:  https://fooplugins.com
  * License:     GPL-2.0+
  * License URI: http://www.gnu.org/licenses/gpl-2.0.txt
  */
 
-DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_VERSION', '2.0.4' );
+DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_VERSION', '2.0.5' );
 DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_SCRIPT_HANDLE', 'fooplugins-freemius-checkout' );
 define( 'FOOPLUGINS_FREEMIUS_CHECKOUT_URL', plugin_dir_url( __FILE__ ) );
 
@@ -61,8 +61,18 @@ function fooplugins_wp_enqueue_scripts() {
 			[
 				'product_id' => 20634,
 				'public_key' => "pk_2a10e2105e540cbac4e28f74c60f5",
-				'product_name' => "FooPlugins Business Bundle"
-			]
+				'product_name' => "FooPass Bundle"
+            ],
+			[
+				'product_id' => 20776,
+				'public_key' => "pk_73dfd509754654f571485b3a03642",
+				'product_name' => "FooGallery Social"
+            ],
+            [
+				'product_id' => 20952,
+				'public_key' => "pk_7783bbab66393eeb4bf90f340c908",
+				'product_name' => "FooGallery Whitelabel"
+            ]
 		],
 		'success_url' => site_url("/purchase-thanks/"),
 		'affiliation' => "FooPlugins"
