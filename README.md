@@ -46,24 +46,29 @@ Example:
 Then add anchor tags to your site with an href starting with https://checkout.freemius.com/
 
 Simple Example:
- ```html
- <a href="https://checkout.freemius.com/plugin/843/plan/14086/">Buy</a>
- ```
+```html
+<a href="https://checkout.freemius.com/plugin/843/plan/14086/">Buy</a>
+```
 
 License Example:
- ```html
- <a href="https://checkout.freemius.com/plugin/843/plan/14086/licenses/5/">Buy</a>
- ```
+```html
+<a href="https://checkout.freemius.com/plugin/843/plan/14086/licenses/5/">Buy</a>
+```
 
 Trial Example:
  ```html
  <a href="https://checkout.freemius.com/plugin/843/plan/14086/?trial=free">Try for free</a>
  ```
 
- Coupon Example:
- ```html
- <a href="https://checkout.freemius.com/plugin/843/plan/14086/?coupon=FOO">Buy with coupon</a>
- ```
+Coupon Example:
+```html
+<a href="https://checkout.freemius.com/plugin/843/plan/14086/?coupon=FOO">Buy with coupon</a>
+```
+
+Another Example (using any other supported querystrings)
+```html
+<a href="https://checkout.freemius.com/plugin/843/plan/14086/?bundle_discount=true&billing_cycle_selector=responsive_list">Buy</a>
+```
 
 ### Freemius Documentation
 

@@ -24,6 +24,14 @@
 	    return target;
     }
 
+	function normalizeBoolean(value){
+		if (!isString(value)) return value;
+		const trimmed = value.trim().toLowerCase();
+		if (trimmed === "true" || trimmed === "1") return true;
+		if (trimmed === "false" || trimmed === "0") return false;
+		return value;
+	}
+
     class FooCheckout {
 	    /**
 	     * A map of product_id to handler.
@@ -154,13 +162,33 @@
 			    if (trial_match !== null){
 				    trial = trial_match[1];
 			    }
+				const other_query_params = {};
+				const query_index = href.indexOf("?");
+				if (query_index !== -1){
+					const hash_index = href.indexOf("#", query_index);
+					const query_string = href.substring(query_index + 1, hash_index === -1 ? undefined : hash_index);
+					if (query_string){
+						const known_keys = ["billing_cycle", "trial", "coupon"];
+						query_string.split("&").forEach(function(pair){
+							if (!pair) return;
+							const equals_index = pair.indexOf("=");
+							const raw_key = equals_index === -1 ? pair : pair.substring(0, equals_index);
+							const raw_value = equals_index === -1 ? "" : pair.substring(equals_index + 1);
+							const key = decodeURIComponent(raw_key);
+							if (!key || known_keys.indexOf(key) !== -1) return;
+							const value = decodeURIComponent(raw_value.replace(/\+/g, " "));
+							other_query_params[key] = normalizeBoolean(value);
+						});
+					}
+				}
 			    return {
 				    product_id: parseInt(result[1]),
 				    plan_id: parseInt(result[2]),
 				    licenses: result[3] ? parseInt(result[3]) : 1, // Default to 1 license if not specified
 				    billing_cycle: billing_cycle,
 				    trial,
-					coupon
+					coupon,
+					...other_query_params
 			    };
 		    }
 	    }

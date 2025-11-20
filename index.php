@@ -2,7 +2,7 @@
 /**
  * Plugin Name: FooPlugins Freemius Checkout Plugin
  * Description: A plugin for Freemius checkout on FooPlugins
- * Version:     2.0.5
+ * Version:     2.0.6
  * Author:      Brad Vincent
  * Author URI:  https://fooplugins.com
  * License:     GPL-2.0+
