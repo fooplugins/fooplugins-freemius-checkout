@@ -17,6 +17,7 @@ Once activated, the plugin will automatically load the necessary Freemius checko
 - After purchase tracking : Google Analytics 4 and Facebook Pixel
 - Supports URL's with trials and coupons
 - Supports Freemius dunning mechanism (if configured in your Freemius dashboard)
+- Auto-appends coupon querystring to all checkout url's if on the current page 
 
 ## How to use
 

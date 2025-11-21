@@ -48,7 +48,7 @@
 		    plugin_plan_licenses: /\/(?:plugin|bundle)\/(\d+?)\/plan\/(\d+?)(?:\/licenses\/(\d+?))?(?:\/|$)/,
 		    billing_cycle: /[?&]billing_cycle=(monthly|annual|lifetime)(?:$|&)/,
 		    trial: /[?&]trial=(\w+)(?:$|&)/,
-			coupon: /[?&]coupon=(\w+)(?:$|&)/
+			coupon: /[?&]coupon=([^&#]+)(?:$|&|#)/
 	    };
 
 		/**
@@ -90,6 +90,33 @@
 		    return this.options;
 	    }
 
+	    static #getPageCoupon(){
+		    if (typeof window === "undefined" || !window.location || !window.location.search) return null;
+		    const params = new URLSearchParams(window.location.search);
+		    const coupon = params.get("coupon");
+		    if (!coupon) return null;
+		    const trimmed = coupon.trim();
+		    return trimmed ? trimmed : null;
+	    }
+
+	    static #appendCouponToLink(link, coupon){
+		    if (!coupon || !link || !link.href) return;
+		    try {
+			    const url = new URL(link.href);
+			    if (url.searchParams.has("coupon")) return;
+			    url.searchParams.append("coupon", coupon);
+			    link.href = url.toString();
+			    return;
+		    } catch (err){
+			    if (this.#REGEX.coupon.test(link.href)) return;
+		    }
+		    const hashIndex = link.href.indexOf("#");
+		    const base = hashIndex === -1 ? link.href : link.href.substring(0, hashIndex);
+		    const hash = hashIndex === -1 ? "" : link.href.substring(hashIndex);
+		    const separator = base.indexOf("?") === -1 ? "?" : "&";
+		    link.href = base + separator + "coupon=" + encodeURIComponent(coupon) + hash;
+	    }
+
 	    /**
 	     * Initialize the plugin finding and binding all checkout links in the page.
 	     * @param options
@@ -98,7 +125,9 @@
 		    const self = this;
 		    if (options) self.configure(options);
 		    const links = document.querySelectorAll(self.options.selector);
+		    const pageCoupon = self.#getPageCoupon();
 		    links.forEach(function(link){
+			    if (pageCoupon) self.#appendCouponToLink(link, pageCoupon);
 			    link.addEventListener("click", function(e){
 				    if (self.open(link)){
 					    e.preventDefault();
