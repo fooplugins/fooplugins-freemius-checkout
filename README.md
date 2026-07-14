@@ -1,17 +1,17 @@
-# FooPlugins Freemius Checkout
+# Freemius Checkout
 
-A WordPress plugin that handles Freemius checkout integration for FooPlugins products.
+A WordPress plugin that handles Freemius checkout integration for configured products.
 
 ## Description
 
 This plugin provides an easy way to integrate Freemius checkout into your WordPress site. You just need to edit the main plugin file `index.php` and add your products.
 
-Once activated, the plugin will automatically load the necessary Freemius checkout script (https://checkout.freemius.com/js/v1/) on your site. And then hook up all anchor tags to open the Freemius checkout modal.
+Once activated, the plugin hooks up all anchor tags that point to Freemius Checkout. The Freemius checkout script (https://checkout.freemius.com/js/v1/) is loaded on demand when a checkout link is opened.
 
 ## Features
 
 - Easy integration for multiple products
-- Uses latest Freemius checkout script (https://checkout.freemius.com/js/v1/)
+- Preconnects to Freemius and warms the latest checkout script (https://checkout.freemius.com/js/v1/) asynchronously after the page load completes when checkout links are present
 - Shows the Freemius checkout modal for any anchor tag with a href starting with https://checkout.freemius.com/
 - Configurable success URL after purchase (global or per product)
 - After purchase tracking : Google Analytics 4 and Facebook Pixel
@@ -66,13 +66,23 @@ Coupon Example:
 <a href="https://checkout.freemius.com/plugin/843/plan/14086/?coupon=FOO">Buy with coupon</a>
 ```
 
-Another Example (using any other supported querystrings)
+Another Example (using supported checkout querystrings)
 ```html
 <a href="https://checkout.freemius.com/plugin/843/plan/14086/?bundle_discount=true&billing_cycle_selector=responsive_list">Buy</a>
 ```
+
+Checkout link query strings are limited to documented Freemius checkout options and validated by type before being passed to `FS.Checkout.open()`. Product, plan, and license values come from the URL path and cannot be overridden from the query string. Callback options and the object-valued `sandbox` option are not supported as checkout link query strings.
 
 ### Freemius Documentation
 
 For more info on Freemius checkout, please refer to the [Freemius Documentation](https://freemius.com/help/documentation/checkout/freemius-checkout-buy-button/).
 
+## Build a Release ZIP
 
+Run:
+
+```sh
+bin/build-zip.sh
+```
+
+The ZIP is written to `dist/fooplugins-freemius-checkout-<version>.zip`, where `<version>` is read from the plugin header in `index.php`. The script packages tracked files from the working tree; hidden files and paths listed in `.distignore` are excluded.
