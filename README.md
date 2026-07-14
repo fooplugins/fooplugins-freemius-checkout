@@ -13,6 +13,9 @@ Once activated, the plugin hooks up all anchor tags that point to Freemius Check
 - Easy integration for multiple products
 - Preconnects to Freemius and warms the latest checkout script (https://checkout.freemius.com/js/v1/) asynchronously after the page load completes when checkout links are present
 - Shows the Freemius checkout modal for any anchor tag with a href starting with https://checkout.freemius.com/
+- Confirms that the checkout iframe is visibly rendered before reporting a successful open
+- Redirects the current page to the original hosted checkout URL if loading, handler creation, modal opening, or rendering fails
+- Emits checkout attempt, visible-open, failure, and cancellation diagnostics through browser events for Conversion Bridge
 - Configurable success URL after purchase (global or per product)
 - After purchase tracking : Google Analytics 4 and Facebook Pixel
 - Supports URL's with trials and coupons
@@ -73,16 +76,27 @@ Another Example (using supported checkout querystrings)
 
 Checkout link query strings are limited to documented Freemius checkout options and validated by type before being passed to `FS.Checkout.open()`. Product, plan, and license values come from the URL path and cannot be overridden from the query string. Callback options and the object-valued `sandbox` option are not supported as checkout link query strings.
 
+Known CTA locations can be reported with a controlled attribute:
+
+```html
+<a
+  href="https://checkout.freemius.com/plugin/843/plan/14086/"
+  data-checkout-location="product_pricing_card"
+>Buy</a>
+```
+
+Supported values are `product_pricing_card`, `compare_hero`, `compare_table`, `compare_plan_section`, and `trial`. Untagged or unknown values are reported as `other`.
+
 ### Freemius Documentation
 
 For more info on Freemius checkout, please refer to the [Freemius Documentation](https://freemius.com/help/documentation/checkout/freemius-checkout-buy-button/).
 
 ## Build a Release ZIP
 
-Run:
+From the FooPlugins FSE monorepo, run:
 
 ```sh
-bin/build-zip.sh
+npm run package:checkout:production
 ```
 
-The ZIP is written to `dist/fooplugins-freemius-checkout-<version>.zip`, where `<version>` is read from the plugin header in `index.php`. The script packages tracked files from the working tree; hidden files and paths listed in `.distignore` are excluded.
+The production ZIP version is read from the plugin header in `index.php`. Development files, tests, source maps, and repository metadata are excluded.

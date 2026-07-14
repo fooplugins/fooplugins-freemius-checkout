@@ -83,14 +83,17 @@ These defaults are merged into every `FS.Checkout.open()` call. URL-specific val
 
 1. A checkout link is clicked.
 2. The URL path is parsed for product, plan, and license quantity.
-3. The plugin builds a checkout context using configured product and plan slugs.
-4. `FS.Checkout.open()` is called with Freemius callbacks:
+3. The plugin captures the exact hosted checkout URL, creates an attempt ID, and dispatches `fooplugins_checkout_attempt`.
+4. The existing shared loader promise loads or reuses the warmed Freemius Checkout API.
+5. `FS.Checkout.open()` is called with Freemius callbacks:
    - `track(event, data)` for advanced checkout steps.
    - `purchaseCompleted(response)` for confirmed Freemius purchases.
    - `success(response)` for the final redirect.
-5. The plugin dispatches Conversion Bridge friendly `CustomEvent` events on `document`.
-6. On success, the customer is redirected to the configured thank-you URL with lightweight slug params.
-7. The thank-you page dispatches the final `freemius_purchase_thank_you_viewed` event.
+   - `cancel()` for customer-initiated modal closure.
+6. A bounded observer confirms that a Freemius iframe is visible with non-zero dimensions before either opened event is dispatched.
+7. Any critical error before visible open dispatches a controlled failure event and redirects the current page to the exact captured hosted checkout URL.
+8. On success, the customer is redirected to the configured thank-you URL with lightweight slug params.
+9. The thank-you page dispatches the final `freemius_purchase_thank_you_viewed` event.
 
 ## Events
 
@@ -98,7 +101,11 @@ All events are dispatched on `document` with `bubbles: true`.
 
 | Event | Source | Purpose |
 | --- | --- | --- |
-| `freemius_checkout_opened` | Link click, before the modal opens | Start of checkout lifecycle. |
+| `fooplugins_checkout_attempt` | Accepted unmodified checkout activation | Diagnostic denominator before loading/opening. |
+| `fooplugins_checkout_opened` | Visible checkout iframe | Confirms successful modal rendering and reports load time. |
+| `fooplugins_checkout_open_failed` | Critical error or 10-second visibility timeout | Records a controlled failure immediately before hosted fallback. |
+| `fooplugins_checkout_cancelled` | Freemius `cancel()` callback | Records customer closure and visible-open duration. |
+| `freemius_checkout_opened` | Visible checkout iframe | Existing product-scoped `begin_checkout` source. |
 | `freemius_checkout_load` | Freemius `track('load')` | Checkout loaded. |
 | `freemius_checkout_billing_cycle_updated` | Freemius `track('billing-cycle-updated')` | Billing cycle changed. |
 | `freemius_checkout_licenses_inc` | Freemius `track('licenses-inc')` | License quantity increased. |
@@ -112,12 +119,22 @@ All events are dispatched on `document` with `bubbles: true`.
 | `freemius_checkout_success` | Freemius `success(response)` | Fired immediately before redirect. |
 | `freemius_purchase_thank_you_viewed` | Thank-you page load | Final lifecycle marker after redirect. |
 
-Each event is emitted twice:
+Existing Freemius lifecycle events are emitted twice:
 
 - Shared lifecycle event, for example `freemius_checkout_opened`.
 - Product-scoped event, for example `foogallery_freemius_checkout_opened`.
 
 Conversion Bridge custom events should listen to the product-scoped event names. That allows a separate validated event set per product without duplicate firing across every product on the site.
+
+The four `fooplugins_checkout_*` reliability events are global and are emitted once per lifecycle transition. Conversion Bridge should listen to their exact unscoped names so diagnostics are not duplicated for every product.
+
+## Reliability Diagnostic Payload
+
+All four diagnostics include `attempt_id`, numeric `product_id`, numeric `plan_id`, numeric `licenses`, `billing_cycle`, boolean `is_trial`, controlled `cta_location`, and `checkout_mode=modal`. Opened adds `checkout_load_ms`; failure adds `failure_stage`, `error_code`, and `checkout_load_ms`; cancellation adds `checkout_open_duration_ms`.
+
+`attempt_id` is intentionally high cardinality. Send it with the events for debugging and event pairing, but do not register it as a GA4 custom dimension. No raw exception, stack, email, name, token, license key, or payment data is included.
+
+The hosted fallback is a checkout safety invariant. Once a normal click has been intercepted, SDK load errors, missing product configuration, handler errors, open errors, unexpected lifecycle errors, and render timeouts all call `window.location.assign()` with the original final anchor URL. Modified and middle clicks retain native browser behavior.
 
 Any other Freemius `track` event is normalized by replacing non-alphanumeric characters with underscores. For example `paypal-express-checkout` becomes `freemius_checkout_paypal_express_checkout`.
 
@@ -190,7 +207,7 @@ The thank-you event is only dispatched when the current path matches the configu
 
 Create a Conversion Bridge custom event for each lifecycle event you want to track.
 
-The plugin includes an admin setup page at Settings > Freemius Checkout. Use that page to create and validate the required product-scoped custom events for each configured product.
+The plugin includes an admin setup page at Settings > Freemius Checkout. Its global diagnostics panel creates and validates the four reliability events once. The product panel continues to create and validate the existing product-scoped ecommerce events.
 
 Required baseline for a product such as FooGallery:
 
@@ -202,6 +219,8 @@ Required baseline for a product such as FooGallery:
 | Thank-you purchase | Event | `document` | `foogallery_freemius_purchase_thank_you_viewed` | `purchase` |
 
 Use only one event as the real GA4 `purchase` event. If purchase completion is defined as "the user reached the purchase thank-you page", use the product-scoped thank-you event, for example `foogallery_freemius_purchase_thank_you_viewed`, as `purchase` and keep the product-scoped confirmed event, for example `foogallery_freemius_purchase_confirmed`, as a custom diagnostic event. Mapping both as `purchase` will double count revenue.
+
+Register aggregate GA4 dimensions for `product_id`, `plan_id`, `licenses`, `cta_location`, `checkout_mode`, `failure_stage`, and `is_trial`, plus a custom metric for `checkout_load_ms`. Leave `attempt_id`, `error_code`, and open duration unregistered. Build the reliability funnel from `fooplugins_checkout_attempt` to `fooplugins_checkout_opened` to the existing valid `purchase` event.
 
 ### Custom Parameters
 
@@ -316,6 +335,10 @@ Paste this into the browser console on a checkout page to inspect emitted events
 
 ```js
 [
+  "fooplugins_checkout_attempt",
+  "fooplugins_checkout_opened",
+  "fooplugins_checkout_open_failed",
+  "fooplugins_checkout_cancelled",
   "freemius_checkout_opened",
   "freemius_checkout_load",
   "freemius_checkout_billing_cycle_updated",

@@ -236,6 +236,7 @@
 	     */
 	    static #HANDLERS = new Map();
 	    static #CHECKOUT_SCRIPT_LOAD = null;
+	    static #ACTIVE_ATTEMPT = null;
 	    /**
 	     * A map of checkout_id to checkout context.
 	     * @private
@@ -266,6 +267,7 @@
 		    plugins: [],
 		    success_url: null,
 		    affiliation: null,
+		    checkout_open_timeout_ms: 10000,
 		    checkout_defaults: {},
 		    default_plan: "default_plan",
 		    success_url_params: {
@@ -354,11 +356,20 @@
 		    links.forEach(function(link){
 			    if (pageCoupon) self.#appendCouponToLink(link, pageCoupon);
 			    link.addEventListener("click", function(e){
-				    if (self.open(link)){
-					    e.preventDefault();
+				    if (!self.#isModalActivation(e)) return;
+				    try {
+					    if (self.open(link)) e.preventDefault();
+				    } catch (err){
+					    console.error("Freemius checkout activation failed before interception.", err);
 				    }
 			    });
 		    });
+	    }
+
+	    static #isModalActivation(event){
+		    if (!event || event.defaultPrevented) return false;
+		    if (event.button !== undefined && event.button !== 0) return false;
+		    return !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 	    }
 
 	    /**
@@ -377,31 +388,134 @@
 			//check that the link has an href
 			if (!link || !link.href) return false;
 
-		    const parsed = this.parse(link.href);
-		    if (parsed){
-			    const plugin = this.options.plugins.find(function(p){
-				    return p.product_id === parsed.product_id;
-			    });
-			    if (plugin){
-				    const checkoutOptions = Object.assign({}, this.#getCheckoutDefaults(), parsed);
-				    const href = link.href;
-				    if (this.#isCheckoutApiReady()){
-					    return this.#openParsedCheckout(plugin, checkoutOptions);
-				    }
-				    this.#loadCheckoutScript()
-					    .then(function(){
-						    if (!FooCheckout.#openParsedCheckout(plugin, checkoutOptions)){
-							    window.location.href = href;
-						    }
-					    })
-					    .catch(function(err){
-						    console.error("Freemius Checkout API could not be loaded.", err);
-						    window.location.href = href;
-					    });
-				    return true;
+		    const href = link.href;
+		    let parsed;
+		    try {
+			    parsed = this.parse(href);
+		    } catch (err){
+			    console.error("Freemius checkout URL could not be parsed.", err);
+			    return false;
+		    }
+		    if (!parsed) return false;
+
+		    if (this.#ACTIVE_ATTEMPT) return true;
+
+		    const plugin = this.options.plugins.find(function(p){
+			    return p.product_id === parsed.product_id;
+		    }) || null;
+		    const checkoutOptions = Object.assign({}, this.#getCheckoutDefaults(), parsed);
+		    const contextPlugin = plugin || {
+			    product_id: parsed.product_id,
+			    product_slug: "product-" + parsed.product_id,
+			    product_name: "Product " + parsed.product_id
+		    };
+		    const attempt = {
+			    href: href,
+			    plugin: plugin,
+			    checkout_options: checkoutOptions,
+			    context: this.#createCheckoutContext(contextPlugin, checkoutOptions, link),
+			    started_at: this.#now(),
+			    opened_at: null,
+			    state: "opening",
+			    fallback_started: false,
+			    observer: null,
+			    poll_timer: null,
+			    timeout_timer: null,
+			    baseline_frames: new Set()
+		    };
+		    this.#ACTIVE_ATTEMPT = attempt;
+		    this.#CHECKOUT_CONTEXTS.set(attempt.context.checkout_id, attempt.context);
+		    this.#dispatchDiagnosticEvent(
+			    "fooplugins_checkout_attempt",
+			    this.#buildDiagnosticDetail(attempt)
+		    );
+
+		    Promise.resolve().then(function(){
+			    return FooCheckout.#startAttempt(attempt);
+		    }).catch(function(err){
+			    FooCheckout.#failAttempt(attempt, "unknown", "unexpected_error", err);
+		    });
+		    return true;
+	    }
+
+	    static async #startAttempt(attempt){
+		    if (!this.#isCurrentAttempt(attempt)) return;
+
+		    if (!attempt.plugin){
+			    this.#failAttempt(attempt, "handler_create", "product_not_configured");
+			    return;
+		    }
+		    if (!isString(attempt.plugin.public_key) || !attempt.plugin.public_key.trim()){
+			    this.#failAttempt(attempt, "handler_create", "public_key_missing");
+			    return;
+		    }
+
+		    try {
+			    if (!this.#isCheckoutApiReady()) await this.#loadCheckoutScript();
+		    } catch (err){
+			    this.#failAttempt(
+				    attempt,
+				    err && err.failure_stage ? err.failure_stage : "script_load",
+				    err && err.error_code ? err.error_code : "sdk_request_failed",
+				    err
+			    );
+			    return;
+		    }
+
+		    if (!this.#isCurrentAttempt(attempt)) return;
+		    if (!this.#isCheckoutApiReady()){
+			    this.#failAttempt(attempt, "handler_create", "checkout_api_unavailable");
+			    return;
+		    }
+
+		    let handler;
+		    try {
+			    handler = this.#getHandler(attempt.plugin);
+		    } catch (err){
+			    this.#failAttempt(attempt, "handler_create", "handler_creation_exception", err);
+			    return;
+		    }
+		    if (!handler || typeof handler.open !== "function"){
+			    this.#failAttempt(attempt, "handler_create", "checkout_api_unavailable");
+			    return;
+		    }
+
+		    this.#watchForVisibleCheckout(attempt);
+		    const openOptions = Object.assign({}, attempt.checkout_options, {
+			    track: function(event, data){
+				    FooCheckout.#handleCheckoutTrack(attempt.plugin, attempt.context, event, data);
+			    },
+			    purchaseCompleted: function(response){
+				    FooCheckout.#markAttemptSuccessful(attempt);
+				    FooCheckout.#handlePurchaseCompleted(attempt.plugin, attempt.context, response);
+			    },
+			    success: function(response){
+				    FooCheckout.#markAttemptSuccessful(attempt);
+				    FooCheckout.#handleCheckoutSuccess(attempt.plugin, attempt.context, response);
+			    },
+			    cancel: function(){
+				    FooCheckout.#handleCheckoutCancelled(attempt);
+			    }
+		    });
+
+		    let openResult;
+		    try {
+			    openResult = handler.open(openOptions);
+		    } catch (err){
+			    this.#failAttempt(attempt, "open", "handler_open_exception", err);
+			    return;
+		    }
+		    if (openResult === false){
+			    this.#failAttempt(attempt, "open", "handler_open_rejected");
+			    return;
+		    }
+		    if (openResult && typeof openResult.then === "function"){
+			    try {
+				    await openResult;
+			    } catch (err){
+				    this.#failAttempt(attempt, "open", "handler_open_rejected", err);
 			    }
 		    }
-		    return false;
 	    }
 
 	    static #isCheckoutApiReady(){
@@ -418,12 +532,12 @@
 
 		    this.#CHECKOUT_SCRIPT_LOAD = new Promise(function(resolve, reject){
 			    if (typeof document === "undefined"){
-				    reject(new Error("Document is unavailable."));
+				    reject(FooCheckout.#createCheckoutError("script_load", "document_unavailable", "Document is unavailable."));
 				    return;
 			    }
 			    const container = document.head || document.body;
 			    if (!container){
-				    reject(new Error("Script container is unavailable."));
+				    reject(FooCheckout.#createCheckoutError("script_load", "script_container_unavailable", "Script container is unavailable."));
 				    return;
 			    }
 
@@ -436,16 +550,23 @@
 					    return;
 				    }
 				    FooCheckout.#CHECKOUT_SCRIPT_LOAD = null;
-				    reject(new Error("Freemius Checkout API did not initialize."));
+				    reject(FooCheckout.#createCheckoutError("script_load", "sdk_not_initialized", "Freemius Checkout API did not initialize."));
 			    };
 			    script.onerror = function(){
 				    FooCheckout.#CHECKOUT_SCRIPT_LOAD = null;
-				    reject(new Error("Freemius Checkout API request failed."));
+				    reject(FooCheckout.#createCheckoutError("script_load", "sdk_request_failed", "Freemius Checkout API request failed."));
 			    };
 			    container.appendChild(script);
 		    });
 
 		    return this.#CHECKOUT_SCRIPT_LOAD;
+	    }
+
+	    static #createCheckoutError(stage, code, message){
+		    const error = new Error(message);
+		    error.failure_stage = stage;
+		    error.error_code = code;
+		    return error;
 	    }
 
 	    /**
@@ -473,25 +594,198 @@
 		    window.addEventListener("load", scheduleWarm, { once: true });
 	    }
 
-	    static #openParsedCheckout(plugin, checkoutOptions){
-		    const handler = this.#getHandler(plugin);
-		    if (!handler) return false;
-		    const context = this.#createCheckoutContext(plugin, checkoutOptions);
-		    this.#CHECKOUT_CONTEXTS.set(context.checkout_id, context);
-		    const openOptions = Object.assign({}, checkoutOptions, {
-			    track: function(event, data){
-				    FooCheckout.#handleCheckoutTrack(plugin, context, event, data);
-			    },
-			    purchaseCompleted: function(response){
-				    FooCheckout.#handlePurchaseCompleted(plugin, context, response);
-			    },
-			    success: function(response){
-				    FooCheckout.#handleCheckoutSuccess(plugin, context, response);
-			    }
+	    static #now(){
+		    return typeof performance !== "undefined" && typeof performance.now === "function"
+			    ? performance.now()
+			    : Date.now();
+	    }
+
+	    static #createAttemptId(){
+		    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"){
+			    return crypto.randomUUID();
+		    }
+		    return "attempt-" + Date.now().toString(36) + "-" + Math.random().toString(36).substring(2, 12);
+	    }
+
+	    static #getCtaLocation(link){
+		    const allowed = ["product_pricing_card", "compare_hero", "compare_table", "compare_plan_section", "trial", "other"];
+		    const location = link && link.dataset ? String(link.dataset.checkoutLocation || "").trim().toLowerCase() : "";
+		    return allowed.indexOf(location) !== -1 ? location : "other";
+	    }
+
+	    static #isTrialCheckout(value){
+		    return value !== undefined && value !== null && value !== false && value !== "false" && value !== "0";
+	    }
+
+	    static #isCurrentAttempt(attempt){
+		    return this.#ACTIVE_ATTEMPT === attempt && attempt && attempt.state === "opening" && !attempt.fallback_started;
+	    }
+
+	    static #getCheckoutFrames(){
+		    if (typeof document === "undefined") return [];
+		    return Array.from(document.querySelectorAll(
+			    'iframe[id^="fs-checkout-page-"], iframe[src*="checkout.freemius.com"][src*="_fs_checkout=1"]'
+		    ));
+	    }
+
+	    static #isElementVisible(element){
+		    if (!element || typeof element.getBoundingClientRect !== "function") return false;
+		    const rect = element.getBoundingClientRect();
+		    if (!(rect.width > 0 && rect.height > 0)) return false;
+		    if (typeof window === "undefined" || typeof window.getComputedStyle !== "function") return true;
+		    const style = window.getComputedStyle(element);
+		    return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+	    }
+
+	    static #findVisibleCheckout(attempt){
+		    return this.#getCheckoutFrames().find(function(frame){
+			    return !attempt.baseline_frames.has(frame) && FooCheckout.#isElementVisible(frame);
+		    }) || null;
+	    }
+
+	    static #checkoutOpenTimeout(){
+		    const configured = Number(this.options.checkout_open_timeout_ms);
+		    return Number.isFinite(configured) && configured >= 100 ? configured : 10000;
+	    }
+
+	    static #watchForVisibleCheckout(attempt){
+		    if (!this.#isCurrentAttempt(attempt)) return;
+		    this.#getCheckoutFrames().forEach(function(frame){
+			    if (FooCheckout.#isElementVisible(frame)) attempt.baseline_frames.add(frame);
 		    });
-		    handler.open(openOptions);
-		    this.#dispatchTrackingEvent("freemius_checkout_opened", this.#buildEventDetail(context, "checkout_opened"));
-		    return true;
+
+		    const check = function(){
+			    if (!FooCheckout.#isCurrentAttempt(attempt)) return;
+			    const frame = FooCheckout.#findVisibleCheckout(attempt);
+			    if (frame) FooCheckout.#markAttemptOpened(attempt);
+		    };
+
+		    if (typeof MutationObserver === "function" && document.documentElement){
+			    attempt.observer = new MutationObserver(check);
+			    attempt.observer.observe(document.documentElement, {
+				    childList: true,
+				    subtree: true,
+				    attributes: true,
+				    attributeFilter: ["class", "style", "hidden"]
+			    });
+		    }
+		    attempt.poll_timer = window.setInterval(check, 50);
+		    attempt.timeout_timer = window.setTimeout(function(){
+			    FooCheckout.#failAttempt(attempt, "render_timeout", "dialog_not_visible");
+		    }, this.#checkoutOpenTimeout());
+		    window.setTimeout(check, 0);
+	    }
+
+	    static #cleanupAttempt(attempt){
+		    if (!attempt) return;
+		    try {
+			    if (attempt.observer) attempt.observer.disconnect();
+		    } catch (err){}
+		    try {
+			    if (attempt.poll_timer !== null) window.clearInterval(attempt.poll_timer);
+		    } catch (err){}
+		    try {
+			    if (attempt.timeout_timer !== null) window.clearTimeout(attempt.timeout_timer);
+		    } catch (err){}
+		    attempt.observer = null;
+		    attempt.poll_timer = null;
+		    attempt.timeout_timer = null;
+	    }
+
+	    static #markAttemptOpened(attempt){
+		    if (!this.#isCurrentAttempt(attempt)) return;
+		    attempt.state = "opened";
+		    attempt.opened_at = this.#now();
+		    this.#cleanupAttempt(attempt);
+		    const loadMs = Math.max(0, Math.round(attempt.opened_at - attempt.started_at));
+		    this.#dispatchDiagnosticEvent(
+			    "fooplugins_checkout_opened",
+			    this.#buildDiagnosticDetail(attempt, { checkout_load_ms: loadMs })
+		    );
+		    this.#dispatchTrackingEvent(
+			    "freemius_checkout_opened",
+			    this.#buildEventDetail(attempt.context, "checkout_opened", { checkout_load_ms: loadMs })
+		    );
+	    }
+
+	    static #markAttemptSuccessful(attempt){
+		    if (this.#ACTIVE_ATTEMPT !== attempt || !attempt || attempt.fallback_started) return;
+		    this.#cleanupAttempt(attempt);
+		    attempt.state = "success";
+		    this.#ACTIVE_ATTEMPT = null;
+	    }
+
+	    static #handleCheckoutCancelled(attempt){
+		    if (this.#ACTIVE_ATTEMPT !== attempt || !attempt || attempt.fallback_started || attempt.state === "success") return;
+		    const cancelledAt = this.#now();
+		    this.#cleanupAttempt(attempt);
+		    attempt.state = "cancelled";
+		    this.#ACTIVE_ATTEMPT = null;
+		    this.#dispatchDiagnosticEvent(
+			    "fooplugins_checkout_cancelled",
+			    this.#buildDiagnosticDetail(attempt, {
+				    checkout_open_duration_ms: Math.max(0, Math.round(cancelledAt - (attempt.opened_at || attempt.started_at)))
+			    })
+		    );
+	    }
+
+	    static #failAttempt(attempt, stage, code, error){
+		    if (!attempt || attempt.fallback_started || attempt.state === "opened" || attempt.state === "success" || attempt.state === "cancelled") return;
+		    attempt.fallback_started = true;
+		    attempt.state = "failed";
+		    try {
+			    this.#cleanupAttempt(attempt);
+		    } catch (cleanupError){}
+		    if (this.#ACTIVE_ATTEMPT === attempt) this.#ACTIVE_ATTEMPT = null;
+		    try {
+			    if (error) console.error("Freemius checkout failed; using hosted checkout fallback.", error);
+		    } catch (loggingError){}
+		    try {
+			    this.#dispatchDiagnosticEvent(
+				    "fooplugins_checkout_open_failed",
+				    this.#buildDiagnosticDetail(attempt, {
+					    failure_stage: stage || "unknown",
+					    error_code: code || "unexpected_error",
+					    checkout_load_ms: Math.max(0, Math.round(this.#now() - attempt.started_at))
+				    })
+			    );
+		    } catch (diagnosticError){}
+
+		    try {
+			    window.location.assign(attempt.href);
+		    } catch (navigationError){
+			    window.location.href = attempt.href;
+		    }
+	    }
+
+	    static #buildDiagnosticDetail(attempt, extra){
+		    const context = attempt && attempt.context ? attempt.context : {};
+		    return cleanObject(Object.assign({
+			    attempt_id: context.attempt_id,
+			    product_id: Number(context.product_id) || 0,
+			    plan_id: Number(context.plan_id) || 0,
+			    licenses: Number(context.licenses) || 1,
+			    billing_cycle: context.billing_cycle || "none",
+			    is_trial: context.is_trial === true,
+			    cta_location: context.cta_location || "other",
+			    checkout_mode: "modal"
+		    }, extra || {}));
+	    }
+
+	    static #dispatchDiagnosticEvent(name, detail){
+		    try {
+			    if (typeof document === "undefined" || typeof CustomEvent !== "function") return false;
+			    document.dispatchEvent(new CustomEvent(name, {
+				    bubbles: true,
+				    detail: cleanObject(detail || {})
+			    }));
+			    return true;
+		    } catch (err){
+			    try {
+				    console.warn("Checkout diagnostic event could not be dispatched.", err);
+			    } catch (loggingError){}
+			    return false;
+		    }
 	    }
 
 	    /**
@@ -500,6 +794,14 @@
 	     * @returns {{product_id: number, licenses: number, billing_cycle: string, plan_id: number, trial: string, coupon: string}}
 	     */
 	    static parse(href){
+		    let checkoutUrl;
+		    try {
+			    checkoutUrl = new URL(href, typeof window !== "undefined" ? window.location.href : undefined);
+		    } catch (err){
+			    return;
+		    }
+		    if (checkoutUrl.protocol !== "https:" || checkoutUrl.hostname !== "checkout.freemius.com") return;
+		    href = checkoutUrl.toString();
 		    const result = href.match(this.#REGEX.plugin_plan_licenses);
 		    if (result !== null){
 			    const billing_cycle_match = href.match(this.#REGEX.billing_cycle);
@@ -603,12 +905,15 @@
 			    .join("-");
 	    }
 
-	    static #createCheckoutContext(plugin, parsed){
+	    static #createCheckoutContext(plugin, parsed, link){
 		    const productSlug = this.#getProductSlug(plugin);
 		    const planSlug = this.#getPlanSlug(plugin, parsed.plan_id);
 		    return cleanObject({
+			    attempt_id: this.#createAttemptId(),
 			    checkout_id: this.#createCheckoutId(productSlug, planSlug),
 			    category: "freemius_checkout",
+			    product_id: Number(parsed.product_id) || 0,
+			    plan_id: Number(parsed.plan_id) || 0,
 			    product_slug: productSlug,
 			    plan_slug: planSlug,
 			    product_name: plugin.product_name,
@@ -616,6 +921,9 @@
 			    licenses: parsed.licenses,
 			    coupon: parsed.coupon,
 			    trial: parsed.trial,
+			    is_trial: this.#isTrialCheckout(parsed.trial),
+			    cta_location: this.#getCtaLocation(link),
+			    checkout_mode: "modal",
 			    affiliation: this.options.affiliation
 		    });
 	    }
@@ -635,17 +943,25 @@
 	    }
 
 	    static #dispatchTrackingEvent(name, detail){
-		    if (typeof document === "undefined" || typeof CustomEvent !== "function") return;
-		    const eventDetail = cleanObject(detail || {});
-		    document.dispatchEvent(new CustomEvent(name, {
-			    bubbles: true,
-			    detail: eventDetail
-		    }));
-		    if (eventDetail.product_slug){
-			    document.dispatchEvent(new CustomEvent(eventDetail.product_slug + "_" + name, {
+		    try {
+			    if (typeof document === "undefined" || typeof CustomEvent !== "function") return false;
+			    const eventDetail = cleanObject(detail || {});
+			    document.dispatchEvent(new CustomEvent(name, {
 				    bubbles: true,
 				    detail: eventDetail
 			    }));
+			    if (eventDetail.product_slug){
+				    document.dispatchEvent(new CustomEvent(eventDetail.product_slug + "_" + name, {
+					    bubbles: true,
+					    detail: eventDetail
+				    }));
+			    }
+			    return true;
+		    } catch (err){
+			    try {
+				    console.warn("Checkout tracking event could not be dispatched.", err);
+			    } catch (loggingError){}
+			    return false;
 		    }
 	    }
 

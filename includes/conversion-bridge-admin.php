@@ -6,6 +6,7 @@ define( 'FOOPLUGINS_FREEMIUS_CHECKOUT_CB_EVENT_ID_PREFIX', 'fooplugins_' );
 
 add_action( 'admin_post_fooplugins_freemius_checkout_cb_create_events', 'fooplugins_freemius_checkout_cb_create_events_action' );
 add_action( 'admin_post_fooplugins_freemius_checkout_cb_delete_event', 'fooplugins_freemius_checkout_cb_delete_event_action' );
+add_action( 'admin_post_fooplugins_freemius_checkout_cb_create_diagnostics', 'fooplugins_freemius_checkout_cb_create_diagnostics_action' );
 
 function fooplugins_freemius_checkout_cb_is_available() {
 	return function_exists( 'CB' ) && is_object( CB() ) && method_exists( CB(), 'get_option' ) && method_exists( CB(), 'update_option' );
@@ -87,6 +88,114 @@ function fooplugins_freemius_checkout_cb_purchase_parameters( $product ) {
 			'items'          => '%%e.detail.items%%',
 		)
 	);
+}
+
+function fooplugins_freemius_checkout_cb_diagnostic_common_parameters() {
+	return array(
+		'attempt_id'    => '%%e.detail.attempt_id%%',
+		'product_id'    => '%%e.detail.product_id%%',
+		'plan_id'       => '%%e.detail.plan_id%%',
+		'licenses'      => '%%e.detail.licenses%%',
+		'billing_cycle' => '%%e.detail.billing_cycle%%',
+		'is_trial'      => '%%e.detail.is_trial%%',
+		'cta_location'  => '%%e.detail.cta_location%%',
+		'checkout_mode' => '%%e.detail.checkout_mode%%',
+	);
+}
+
+function fooplugins_freemius_checkout_cb_diagnostic_events() {
+	$common = fooplugins_freemius_checkout_cb_diagnostic_common_parameters();
+
+	return array(
+		'checkout_attempt' => array(
+			'label'       => __( 'Checkout attempt', 'fooplugins-freemius-checkout' ),
+			'description' => __( 'A valid checkout link was accepted for modal opening.', 'fooplugins-freemius-checkout' ),
+			'trigger'     => 'event',
+			'type'        => 'fooplugins_checkout_attempt',
+			'selector'    => 'document',
+			'event'       => 'fooplugins_checkout_attempt',
+			'value'       => '',
+			'parameters'  => $common,
+		),
+		'checkout_opened' => array(
+			'label'       => __( 'Checkout visibly opened', 'fooplugins-freemius-checkout' ),
+			'description' => __( 'The Freemius checkout iframe became visible with non-zero dimensions.', 'fooplugins-freemius-checkout' ),
+			'trigger'     => 'event',
+			'type'        => 'fooplugins_checkout_opened',
+			'selector'    => 'document',
+			'event'       => 'fooplugins_checkout_opened',
+			'value'       => '',
+			'parameters'  => array_merge(
+				$common,
+				array( 'checkout_load_ms' => '%%e.detail.checkout_load_ms%%' )
+			),
+		),
+		'checkout_open_failed' => array(
+			'label'       => __( 'Checkout open failed', 'fooplugins-freemius-checkout' ),
+			'description' => __( 'Modal opening failed and the visitor was sent to hosted checkout.', 'fooplugins-freemius-checkout' ),
+			'trigger'     => 'event',
+			'type'        => 'fooplugins_checkout_open_failed',
+			'selector'    => 'document',
+			'event'       => 'fooplugins_checkout_open_failed',
+			'value'       => '',
+			'parameters'  => array_merge(
+				$common,
+				array(
+					'failure_stage'    => '%%e.detail.failure_stage%%',
+					'error_code'       => '%%e.detail.error_code%%',
+					'checkout_load_ms' => '%%e.detail.checkout_load_ms%%',
+				)
+			),
+		),
+		'checkout_cancelled' => array(
+			'label'       => __( 'Checkout cancelled', 'fooplugins-freemius-checkout' ),
+			'description' => __( 'The visitor closed a visibly opened Freemius checkout.', 'fooplugins-freemius-checkout' ),
+			'trigger'     => 'event',
+			'type'        => 'fooplugins_checkout_cancelled',
+			'selector'    => 'document',
+			'event'       => 'fooplugins_checkout_cancelled',
+			'value'       => '',
+			'parameters'  => array_merge(
+				$common,
+				array( 'checkout_open_duration_ms' => '%%e.detail.checkout_open_duration_ms%%' )
+			),
+		),
+	);
+}
+
+function fooplugins_freemius_checkout_cb_diagnostic_event_id( $requirement, $definition ) {
+	return FOOPLUGINS_FREEMIUS_CHECKOUT_CB_EVENT_ID_PREFIX . md5( 'diagnostic|' . $requirement . '|' . $definition['event'] );
+}
+
+function fooplugins_freemius_checkout_cb_build_diagnostic_event( $requirement, $definition ) {
+	return array(
+		'id'         => fooplugins_freemius_checkout_cb_diagnostic_event_id( $requirement, $definition ),
+		'trigger'    => $definition['trigger'],
+		'type'       => $definition['type'],
+		'selector'   => $definition['selector'],
+		'event'      => $definition['event'],
+		'label'      => 'Freemius Checkout - ' . $definition['label'],
+		'value'      => $definition['value'],
+		'parameters' => $definition['parameters'],
+	);
+}
+
+function fooplugins_freemius_checkout_cb_get_diagnostic_matches( $events, $definitions ) {
+	$matches = array_fill_keys( array_keys( $definitions ), array() );
+	foreach ( $events as $index => $event ) {
+		$normalized = function_exists( 'cb_normalize_custom_event' ) ? cb_normalize_custom_event( $event ) : $event;
+		foreach ( $definitions as $requirement => $definition ) {
+			$owned_id = ! empty( $normalized['id'] ) && fooplugins_freemius_checkout_cb_diagnostic_event_id( $requirement, $definition ) === $normalized['id'];
+			$same_event = ! empty( $normalized['event'] ) && $definition['event'] === $normalized['event'];
+			if ( $owned_id || $same_event ) {
+				$matches[ $requirement ][] = array(
+					'index' => $index,
+					'event' => $normalized,
+				);
+			}
+		}
+	}
+	return $matches;
 }
 
 function fooplugins_freemius_checkout_cb_required_events( $product ) {
@@ -290,6 +399,33 @@ function fooplugins_freemius_checkout_cb_create_events_action() {
 	fooplugins_freemius_checkout_cb_redirect( $product_slug, $created ? 'created' : 'none-created', $created );
 }
 
+function fooplugins_freemius_checkout_cb_create_diagnostics_action() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( esc_html__( 'You do not have permission to manage checkout diagnostics.', 'fooplugins-freemius-checkout' ) );
+	}
+
+	check_admin_referer( 'fooplugins_freemius_checkout_cb_create_diagnostics' );
+	if ( ! fooplugins_freemius_checkout_cb_is_available() ) {
+		fooplugins_freemius_checkout_cb_redirect( '', 'error' );
+	}
+
+	$events      = fooplugins_freemius_checkout_cb_get_custom_events();
+	$definitions = fooplugins_freemius_checkout_cb_diagnostic_events();
+	$matches     = fooplugins_freemius_checkout_cb_get_diagnostic_matches( $events, $definitions );
+	$created     = 0;
+
+	foreach ( $definitions as $requirement => $definition ) {
+		if ( ! empty( $matches[ $requirement ] ) ) {
+			continue;
+		}
+		$events[] = fooplugins_freemius_checkout_cb_build_diagnostic_event( $requirement, $definition );
+		$created++;
+	}
+
+	fooplugins_freemius_checkout_cb_update_custom_events( $events );
+	fooplugins_freemius_checkout_cb_redirect( '', $created ? 'created' : 'none-created', $created );
+}
+
 function fooplugins_freemius_checkout_cb_delete_event_action() {
 	if ( ! current_user_can( 'manage_options' ) ) {
 		wp_die( esc_html__( 'You do not have permission to manage these events.', 'fooplugins-freemius-checkout' ) );
@@ -337,7 +473,79 @@ function fooplugins_freemius_checkout_cb_redirect( $product_slug, $message, $cou
 	fooplugins_freemius_checkout_admin_redirect( $tab, $message, $count, $product_slug );
 }
 
+function fooplugins_freemius_checkout_cb_render_diagnostics_panel() {
+	$definitions = fooplugins_freemius_checkout_cb_diagnostic_events();
+	$events      = fooplugins_freemius_checkout_cb_get_custom_events();
+	$matches     = fooplugins_freemius_checkout_cb_get_diagnostic_matches( $events, $definitions );
+	$missing     = fooplugins_freemius_checkout_cb_count_missing( $matches );
+	?>
+	<div class="fooplugins-freemius-cb__panel">
+		<h2><?php esc_html_e( 'Checkout reliability diagnostics', 'fooplugins-freemius-checkout' ); ?></h2>
+		<p><?php esc_html_e( 'These four global events measure accepted checkout attempts, visibly opened modals, hosted-checkout fallbacks, and cancellations without duplicating them for every product.', 'fooplugins-freemius-checkout' ); ?></p>
+
+		<?php if ( ! fooplugins_freemius_checkout_cb_is_available() ) : ?>
+			<div class="notice notice-error inline"><p><?php esc_html_e( 'Conversion Bridge is not active or is not loaded.', 'fooplugins-freemius-checkout' ); ?></p></div>
+		<?php elseif ( $missing > 0 ) : ?>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<?php wp_nonce_field( 'fooplugins_freemius_checkout_cb_create_diagnostics' ); ?>
+				<input type="hidden" name="action" value="fooplugins_freemius_checkout_cb_create_diagnostics" />
+				<?php submit_button( __( 'Create missing diagnostic events', 'fooplugins-freemius-checkout' ), 'primary', 'submit', false ); ?>
+			</form>
+		<?php else : ?>
+			<p><strong><?php esc_html_e( 'All checkout diagnostic events exist.', 'fooplugins-freemius-checkout' ); ?></strong></p>
+		<?php endif; ?>
+
+		<table class="widefat striped fooplugins-freemius-cb__table">
+			<thead><tr>
+				<th><?php esc_html_e( 'Diagnostic', 'fooplugins-freemius-checkout' ); ?></th>
+				<th><?php esc_html_e( 'JavaScript event', 'fooplugins-freemius-checkout' ); ?></th>
+				<th><?php esc_html_e( 'Status', 'fooplugins-freemius-checkout' ); ?></th>
+				<th><?php esc_html_e( 'Validation', 'fooplugins-freemius-checkout' ); ?></th>
+			</tr></thead>
+			<tbody>
+			<?php foreach ( $definitions as $requirement => $definition ) : ?>
+				<?php
+				$requirement_matches = $matches[ $requirement ];
+				$issues              = array();
+				if ( ! empty( $requirement_matches ) ) {
+					$issues = fooplugins_freemius_checkout_cb_validate_event( $requirement_matches[0]['event'], $definition );
+					if ( count( $requirement_matches ) > 1 ) {
+						$issues[] = __( 'Duplicate event for this diagnostic.', 'fooplugins-freemius-checkout' );
+					}
+				}
+				?>
+				<tr>
+					<td><strong><?php echo esc_html( $definition['label'] ); ?></strong><p class="description"><?php echo esc_html( $definition['description'] ); ?></p></td>
+					<td><code><?php echo esc_html( $definition['event'] ); ?></code></td>
+					<td>
+						<?php if ( empty( $requirement_matches ) ) : ?>
+							<span class="fooplugins-freemius-cb__status is-missing"><?php esc_html_e( 'Missing', 'fooplugins-freemius-checkout' ); ?></span>
+						<?php elseif ( empty( $issues ) ) : ?>
+							<span class="fooplugins-freemius-cb__status is-valid"><?php esc_html_e( 'Valid', 'fooplugins-freemius-checkout' ); ?></span>
+						<?php else : ?>
+							<span class="fooplugins-freemius-cb__status is-warning"><?php esc_html_e( 'Needs attention', 'fooplugins-freemius-checkout' ); ?></span>
+						<?php endif; ?>
+					</td>
+					<td>
+						<?php if ( empty( $requirement_matches ) ) : ?>
+							<?php esc_html_e( 'No matching Conversion Bridge event was found.', 'fooplugins-freemius-checkout' ); ?>
+						<?php elseif ( empty( $issues ) ) : ?>
+							<?php esc_html_e( 'Configuration matches the required diagnostic event.', 'fooplugins-freemius-checkout' ); ?>
+						<?php else : ?>
+							<ul class="fooplugins-freemius-cb__issues"><?php foreach ( $issues as $issue ) : ?><li><?php echo esc_html( $issue ); ?></li><?php endforeach; ?></ul>
+						<?php endif; ?>
+					</td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+	</div>
+	<?php
+}
+
 function fooplugins_freemius_checkout_cb_render_tab() {
+	fooplugins_freemius_checkout_cb_render_diagnostics_panel();
+
 	$products    = fooplugins_freemius_checkout_cb_get_products();
 	$active_slug = fooplugins_freemius_checkout_cb_get_active_product_slug();
 	$active      = $active_slug ? fooplugins_freemius_checkout_cb_get_product( $active_slug ) : null;

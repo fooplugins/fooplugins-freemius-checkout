@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Freemius Checkout Plugin
  * Description: A plugin for Freemius checkout.
- * Version:     2.0.11
+ * Version:     2.1.0
  * Author:      Brad Vincent
  * License:     GPL-2.0+
  * License URI: http://www.gnu.org/licenses/gpl-2.0.txt
@@ -10,7 +10,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_VERSION', '2.0.11' );
+DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_VERSION', '2.1.0' );
 DEFINE( 'FOOPLUGINS_FREEMIUS_CHECKOUT_SCRIPT_HANDLE', 'fooplugins-freemius-checkout' );
 define( 'FOOPLUGINS_FREEMIUS_CHECKOUT_URL', plugin_dir_url( __FILE__ ) );
 define( 'FOOPLUGINS_FREEMIUS_CHECKOUT_DEFAULTS_OPTION', 'fooplugins_freemius_checkout_defaults' );
@@ -203,6 +203,7 @@ function fooplugins_freemius_checkout_get_config() {
 		],
 		'success_url'        => site_url("/purchase-thanks/"),
 		'affiliation'        => "FooPlugins",
+		'checkout_open_timeout_ms' => 10000,
 		'checkout_defaults'  => fooplugins_freemius_checkout_get_checkout_defaults()
 	];
 }
