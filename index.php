@@ -180,11 +180,25 @@ function fooplugins_freemius_checkout_get_config() {
 				'default_plan' => "listing",
 			],
 			[
+				'product_id' => 29026,
+				'public_key' => "pk_7944b79a1f3ed5750c2933e66c4c7",
+				'product_name' => "FooGallery Client Proofing",
+				'product_slug' => "foogallery-proofing",
+				'default_plan' => "pro",
+			],
+			[
 				'product_id' => 31072,
 				'public_key' => "pk_48afde79b240da81c9e9ee49e0ec1",
 				'product_name' => "Migration Service",
 				'product_slug' => "fooplugins-migration-service",
 				'default_plan' => "migration",
+			],
+			[
+				'product_id' => 34487,
+				'public_key' => "pk_b9faee649b5c7071d89307fe911df",
+				'product_name' => "FooGallery Agency Bundle",
+				'product_slug' => "foogallery-agency-bundle",
+				'default_plan' => "pro",
 			]
 		],
 		'success_url'        => site_url("/purchase-thanks/"),
