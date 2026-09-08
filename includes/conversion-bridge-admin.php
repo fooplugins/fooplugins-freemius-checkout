@@ -237,16 +237,6 @@ function fooplugins_freemius_checkout_cb_required_events( $product ) {
 			'value'       => '',
 			'parameters'  => fooplugins_freemius_checkout_cb_purchase_parameters( $product ),
 		),
-		'thank_you_purchase' => array(
-			'label'       => __( 'Thank-you purchase', 'fooplugins-freemius-checkout' ),
-			'description' => __( 'The GA4 purchase event fired on the purchase thank-you page.', 'fooplugins-freemius-checkout' ),
-			'trigger'     => 'event',
-			'type'        => 'purchase',
-			'selector'    => 'document',
-			'event'       => fooplugins_freemius_checkout_cb_event_name( $product_slug, 'freemius_purchase_thank_you_viewed' ),
-			'value'       => '%%e.detail.value%%',
-			'parameters'  => fooplugins_freemius_checkout_cb_purchase_parameters( $product ),
-		),
 	);
 }
 

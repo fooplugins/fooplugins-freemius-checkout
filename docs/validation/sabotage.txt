@@ -1,0 +1,264 @@
+BASE_HEAD=8b5502bbe690ac20242074395e42b33b8dc7c1f3
+TRACKED_DIFF_SHA256=6ec45d09615497b34af9fbd45fbdbc70ae4311d601af6a535dc194d9a42dbb3c
+
+MUTATION=non-string track coercion restored
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testStoredThankYouContextIsStrictlyRevalidated
+PASS: testCouponContextRejectsPiiAndCoerciveValues
+TypeError: event.trim is not a function
+    at #normalizeEventName (js/fooplugins-freemius.js:935:9)
+    at #handleCheckoutTrack (js/fooplugins-freemius.js:1024:55)
+    at Object.track (js/fooplugins-freemius.js:487:41)
+    at testArbitraryTrackEventNameCannotLeakNestedData (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:367:13)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:551:5)
+
+MUTATION=impossible trial date acceptance restored
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testStoredThankYouContextIsStrictlyRevalidated
+PASS: testCouponContextRejectsPiiAndCoerciveValues
+PASS: testArbitraryTrackEventNameCannotLeakNestedData
+PASS: testDefaultPlanCheckoutRetainsThankYouLifecycle
+PASS: testTrialPurchaseUsesZeroTotalAndUnitPrice
+PASS: testFalseTrialEndsKeepsPaidPurchaseValue
+AssertionError [ERR_ASSERTION]: trial checkout with impossible calendar timestamp must not emit purchase confirmation.
+
+1 !== 0
+
+    at testContradictoryOrMalformedTrialStateFailsClosed (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:473:12)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:551:5)
+
+MUTATION=track event detail uses raw callback value
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testStoredThankYouContextIsStrictlyRevalidated
+PASS: testCouponContextRejectsPiiAndCoerciveValues
+AssertionError [ERR_ASSERTION]: An arbitrary track event value must not be copied into event detail.
+
+true !== false
+
+    at testArbitraryTrackEventNameCannotLeakNestedData (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:370:10)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:551:5)
+
+MUTATION=default-plan zero sentinel rejected
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testStoredThankYouContextIsStrictlyRevalidated
+PASS: testCouponContextRejectsPiiAndCoerciveValues
+PASS: testArbitraryTrackEventNameCannotLeakNestedData
+AssertionError [ERR_ASSERTION]: A valid default-plan checkout must retain its thank-you lifecycle event.
+
+0 !== 1
+
+    at testDefaultPlanCheckoutRetainsThankYouLifecycle (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:389:10)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:551:5)
+
+MUTATION=stored-context revalidation bypass
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+AssertionError [ERR_ASSERTION]: nested stored coupon PII must fail closed before thank-you dispatch.
+
+1 !== 0
+
+    at testStoredThankYouContextIsStrictlyRevalidated (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:329:12)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:551:5)
+
+MUTATION=stored billing-cycle validation removed
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+AssertionError [ERR_ASSERTION]: nested stored billing-cycle PII must fail closed before thank-you dispatch.
+
+1 !== 0
+
+    at testStoredThankYouContextIsStrictlyRevalidated (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:329:12)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:551:5)
+
+MUTATION=tracked coupon validation bypass
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testStoredThankYouContextIsStrictlyRevalidated
+AssertionError [ERR_ASSERTION]: Hostile tracked coupon data must be omitted from lifecycle dispatch.
+
+true !== false
+
+    at testCouponContextRejectsPiiAndCoerciveValues (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:351:12)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:551:5)
+
+MUTATION=trial contradiction guard removed
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testStoredThankYouContextIsStrictlyRevalidated
+PASS: testCouponContextRejectsPiiAndCoerciveValues
+PASS: testArbitraryTrackEventNameCannotLeakNestedData
+PASS: testDefaultPlanCheckoutRetainsThankYouLifecycle
+PASS: testTrialPurchaseUsesZeroTotalAndUnitPrice
+PASS: testFalseTrialEndsKeepsPaidPurchaseValue
+AssertionError [ERR_ASSERTION]: paid checkout with a trial end timestamp must not emit purchase confirmation.
+
+1 !== 0
+
+    at testContradictoryOrMalformedTrialStateFailsClosed (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:473:12)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:551:5)
+
+MUTATION=transaction whitespace normalization reintroduced
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testStoredThankYouContextIsStrictlyRevalidated
+PASS: testCouponContextRejectsPiiAndCoerciveValues
+PASS: testArbitraryTrackEventNameCannotLeakNestedData
+PASS: testDefaultPlanCheckoutRetainsThankYouLifecycle
+PASS: testTrialPurchaseUsesZeroTotalAndUnitPrice
+PASS: testFalseTrialEndsKeepsPaidPurchaseValue
+PASS: testContradictoryOrMalformedTrialStateFailsClosed
+AssertionError [ERR_ASSERTION]: whitespace-padded transaction identifier must not emit purchase confirmation.
+
+1 !== 0
+
+    at testInvalidCoerciveCommerceValuesFailClosed (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:524:12)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:551:5)
+
+MUTATION=purchase coupon validation bypass
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testStoredThankYouContextIsStrictlyRevalidated
+AssertionError [ERR_ASSERTION]: Hostile optional coupon data must be omitted from dispatch.
+
+true !== false
+
+    at testCouponContextRejectsPiiAndCoerciveValues (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:358:12)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:551:5)
+
+MUTATION=multi-license unit price inflation reintroduced
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+AssertionError [ERR_ASSERTION]: Multi-license item price must be a unit price, not the transaction total.
+    at testMultiLicenseReorderedAndDuplicateCallbacks (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:267:10)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:551:5)
+
+MUTATION=destination purchase mapping regenerated
+COMMAND=php tests/conversion-bridge-contract.php
+EXPECTED=nonzero
+EXIT=1
+FAIL: Required definitions must contain only the three vendor-neutral product lifecycle events.
+
+CROSS-REPO BROWSER COMPATIBILITY MUTATIONS
+
+MUTATION=plan-advisor CTA removed from closed allowlist
+COMMAND=FOOPLUGINS_FREEMIUS_CHECKOUT_REPO=/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract npx playwright test --config=playwright.checkout.config.mjs tests/checkout/ga4-purchase-bridge.spec.mjs tests/checkout/plan-advisor.spec.mjs
+EXPECTED=nonzero
+EXIT=1
+checkout-18ef1-e-exact-hosted-checkout-URL-chromium-mobile/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/plan-advisor-real-checkout-18ef1-e-exact-hosted-checkout-URL-chromium-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/plan-advisor-real-checkout-18ef1-e-exact-hosted-checkout-URL-chromium-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  4 failed
+    [chromium-desktop] › tests/checkout/plan-advisor.spec.mjs:281:2 › real checkout bridge integration › visible checkout uses the real diagnostic schema and suppresses an active duplicate
+    [chromium-desktop] › tests/checkout/plan-advisor.spec.mjs:348:2 › real checkout bridge integration › a real bridge open rejection navigates to the exact hosted checkout URL
+    [chromium-mobile] › tests/checkout/plan-advisor.spec.mjs:281:2 › real checkout bridge integration › visible checkout uses the real diagnostic schema and suppresses an active duplicate
+    [chromium-mobile] › tests/checkout/plan-advisor.spec.mjs:348:2 › real checkout bridge integration › a real bridge open rejection navigates to the exact hosted checkout URL
+  24 passed (14.0s)
+npm notice run fooplugins-fse-monorepo@0.1.0 npx
+npm notice run 'playwright' test --config=playwright.checkout.config.mjs tests/checkout/ga4-purchase-bridge.spec.mjs tests/checkout/plan-advisor.spec.mjs
+
+
+MUTATION=trial=true normalization narrowed away
+COMMAND=FOOPLUGINS_FREEMIUS_CHECKOUT_REPO=/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract npx playwright test --config=playwright.checkout.config.mjs tests/checkout/ga4-purchase-bridge.spec.mjs tests/checkout/plan-advisor.spec.mjs
+EXPECTED=nonzero
+EXIT=1
+an_id: 14086,
+        at /home/brad/repos/worktrees/fooplugins-fse-ga4-purchase/tests/checkout/plan-advisor.spec.mjs:314:21
+
+    Error Context: test-results/plan-advisor-real-checkout-29002-presses-an-active-duplicate-chromium-mobile/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/plan-advisor-real-checkout-29002-presses-an-active-duplicate-chromium-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/plan-advisor-real-checkout-29002-presses-an-active-duplicate-chromium-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[28/28] [chromium-mobile] › tests/checkout/plan-advisor.spec.mjs:348:2 › real checkout bridge integration › a real bridge open rejection navigates to the exact hosted checkout URL
+  2 failed
+    [chromium-desktop] › tests/checkout/plan-advisor.spec.mjs:281:2 › real checkout bridge integration › visible checkout uses the real diagnostic schema and suppresses an active duplicate
+    [chromium-mobile] › tests/checkout/plan-advisor.spec.mjs:281:2 › real checkout bridge integration › visible checkout uses the real diagnostic schema and suppresses an active duplicate
+  26 passed (13.8s)
+npm notice run fooplugins-fse-monorepo@0.1.0 npx
+npm notice run 'playwright' test --config=playwright.checkout.config.mjs tests/checkout/ga4-purchase-bridge.spec.mjs tests/checkout/plan-advisor.spec.mjs
+
+CTA LIFECYCLE MUTATIONS
+
+MUTATION=stored plan-advisor CTA omitted
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testStoredThankYouContextIsStrictlyRevalidated
+PASS: testCouponContextRejectsPiiAndCoerciveValues
+PASS: testArbitraryTrackEventNameCannotLeakNestedData
+AssertionError [ERR_ASSERTION]: plan_advisor_result must survive stored purchase-context revalidation.
+
+0 !== 1
+
+    at testAllControlledCtaLocationsSurviveThankYouRevalidation (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:392:12)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:576:5)
+
+MUTATION=live sticky CTA omitted
+COMMAND=node tests/checkout-lifecycle.test.js
+EXPECTED=nonzero
+EXIT=1
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testStoredThankYouContextIsStrictlyRevalidated
+PASS: testCouponContextRejectsPiiAndCoerciveValues
+PASS: testArbitraryTrackEventNameCannotLeakNestedData
+AssertionError [ERR_ASSERTION]: product_pricing_sticky attribution must remain exact.
++ actual - expected
+
++ 'other'
+- 'product_pricing_sticky'
+
+    at testAllControlledCtaLocationsSurviveThankYouRevalidation (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:393:12)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:576:5)

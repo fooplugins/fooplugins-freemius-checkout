@@ -17,7 +17,7 @@ Once activated, the plugin hooks up all anchor tags that point to Freemius Check
 - Redirects the current page to the original hosted checkout URL if loading, handler creation, modal opening, or rendering fails
 - Emits checkout attempt, visible-open, failure, and cancellation diagnostics through browser events for Conversion Bridge
 - Configurable success URL after purchase (global or per product)
-- After purchase tracking : Google Analytics 4 and Facebook Pixel
+- Emits vendor-neutral checkout and purchase lifecycle events for analytics bridges; the plugin does not call or configure GA4, Meta, or another destination directly
 - Supports URL's with trials and coupons
 - Supports Freemius dunning mechanism (if configured in your Freemius dashboard)
 - Auto-appends coupon querystring to all checkout url's if on the current page 

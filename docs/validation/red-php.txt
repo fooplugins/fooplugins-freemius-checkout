@@ -1,0 +1,1 @@
+FAIL: Required definitions must contain only the three vendor-neutral product lifecycle events.

@@ -1,0 +1,13 @@
+Canonical cross-repository browser compatibility RED/GREEN
+
+RED command:
+FOOPLUGINS_FREEMIUS_CHECKOUT_REPO=/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract npx playwright test --config=playwright.checkout.config.mjs tests/checkout/ga4-purchase-bridge.spec.mjs tests/checkout/plan-advisor.spec.mjs
+
+RED result before compatibility correction: exit 1; 24 passed, 4 failed. Both desktop and mobile real-checkout tests reported `cta_location` as `other` instead of `plan_advisor_result` and `is_trial` as `false` instead of `true` for the code-owned `?trial=true` plan-advisor checkout.
+
+Fix:
+- add `plan_advisor_result` to the producer's closed CTA-location allowlist
+- retain the existing closed `normalizeTrial` contract (`true`, `false`, `free`, `paid`) rather than narrowing it to only `free`
+- apply the same closed trial normalization during stored-context validation
+
+GREEN rerun: exit 0; 28 passed in 11.7s across Chromium desktop and mobile. No real checkout or network destination was used; the suite installs a local Freemius Checkout stub and route controls.
