@@ -1,0 +1,7 @@
+PASS: testCompletePartialAndThankYouLifecycle
+AssertionError [ERR_ASSERTION]: Duplicate/reordered purchaseCompleted callbacks must emit one confirmation.
+
+2 !== 1
+
+    at testMultiLicenseReorderedAndDuplicateCallbacks (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:261:10)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:346:5)
