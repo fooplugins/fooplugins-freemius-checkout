@@ -243,8 +243,30 @@
 	     * @type {Map<String, Object>}
 	     */
 	    static #CHECKOUT_CONTEXTS = new Map();
+	    static #PURCHASE_STATES = new WeakMap();
 	    static #STORAGE_PREFIX = "fooplugins_freemius_checkout:";
 	    static #THANK_YOU_DISPATCHED = false;
+	    static #SOURCE_CONTEXT_VERSION = 2;
+	    static #SOURCE_TTL_MS = 30 * 60 * 1000;
+	    static #SOURCE_COMPARE_PAGE = "/foogallery-wordpress-gallery-plugin/compare-plans/";
+	    static #SOURCE_PRICING_PAGES = Object.freeze([
+		    "/foogallery-wordpress-gallery-plugin/", "/foobox/",
+		    "/foobar-wordpress-notification-bars/", "/fooconvert/",
+		    "/foopass-bundle/", "/bundles/"
+	    ]);
+	    static #SOURCE_ADDON_PAGES = Object.freeze([
+		    "/foogallery-wordpress-gallery-plugin/user-uploads/",
+		    "/foogallery-wordpress-gallery-plugin/social/",
+		    "/foogallery-wordpress-gallery-plugin/whitelabel/",
+		    "/foogallery-wordpress-gallery-plugin/client-proofing/"
+	    ]);
+	    static #SOURCE_COHORTS = Object.freeze([
+		    "compare_plans", "plan_advisor", "product_pricing", "addon", "documentation", "trial", "unknown"
+	    ]);
+	    static #IMMUTABLE_CONTEXT_KEYS = Object.freeze([
+		    "attempt_id", "checkout_id", "cta_location",
+		    "source_context_version", "source_page", "source_cohort", "source_created_at"
+	    ]);
 	    /**
 	     * The Regular Expressions used to parse the url.
 	     * @private
@@ -608,8 +630,9 @@
 	    }
 
 	    static #getCtaLocation(link){
-		    const allowed = ["product_pricing_card", "compare_hero", "compare_table", "compare_plan_section", "trial", "other"];
-		    const location = link && link.dataset ? String(link.dataset.checkoutLocation || "").trim().toLowerCase() : "";
+		    const allowed = ["product_pricing_card", "product_pricing_sticky", "compare_hero", "compare_table", "compare_plan_section", "trial", "plan_advisor_result", "other"];
+		    const value = link && link.dataset ? link.dataset.checkoutLocation : undefined;
+		    const location = isString(value) ? value.trim().toLowerCase() : "";
 		    return allowed.indexOf(location) !== -1 ? location : "other";
 	    }
 
@@ -762,6 +785,11 @@
 		    const context = attempt && attempt.context ? attempt.context : {};
 		    return cleanObject(Object.assign({
 			    attempt_id: context.attempt_id,
+			    checkout_id: context.checkout_id,
+			    source_context_version: context.source_context_version,
+			    source_page: context.source_page,
+			    source_cohort: context.source_cohort,
+			    source_created_at: context.source_created_at,
 			    product_id: Number(context.product_id) || 0,
 			    plan_id: Number(context.plan_id) || 0,
 			    licenses: Number(context.licenses) || 1,
@@ -905,10 +933,62 @@
 			    .join("-");
 	    }
 
+	    // Closed pathname projection: never retain a URL, query, fragment, or documentation suffix.
+	    static #normalizeSourcePage(path){
+		    if (!isString(path)) return "unknown";
+		    if (path === this.#SOURCE_COMPARE_PAGE || this.#SOURCE_PRICING_PAGES.includes(path) || this.#SOURCE_ADDON_PAGES.includes(path)) return path;
+		    if (path.indexOf("/documentation/") === 0) return "/documentation/";
+		    return "unknown";
+	    }
+
+	    static #getSourceCohort(page, cta){
+		    if (cta === "trial") return "trial";
+		    if (cta === "plan_advisor_result") return "plan_advisor";
+		    if (page === this.#SOURCE_COMPARE_PAGE) return "compare_plans";
+		    if (this.#SOURCE_ADDON_PAGES.includes(page)) return "addon";
+		    if (page === "/documentation/") return "documentation";
+		    if (this.#SOURCE_PRICING_PAGES.includes(page)) return "product_pricing";
+		    return "unknown";
+	    }
+
+	    static #captureSourceContext(cta){
+		    let page = "unknown";
+		    try {
+			    page = this.#normalizeSourcePage(new URL(window.location.href).pathname);
+		    } catch (err){}
+		    return {
+			    source_context_version: this.#SOURCE_CONTEXT_VERSION,
+			    source_page: page,
+			    source_cohort: this.#getSourceCohort(page, cta),
+			    source_created_at: Date.now()
+		    };
+	    }
+
+	    static #isValidStoredSourceContext(stored){
+		    const timestamp = stored.source_created_at;
+		    const now = Date.now();
+		    return stored.source_context_version === this.#SOURCE_CONTEXT_VERSION &&
+			    isString(stored.source_page) &&
+			    this.#normalizeSourcePage(stored.source_page) === stored.source_page &&
+			    this.#SOURCE_COHORTS.includes(stored.source_cohort) &&
+			    this.#getSourceCohort(stored.source_page, stored.cta_location) === stored.source_cohort &&
+			    Number.isSafeInteger(timestamp) && timestamp >= 0 &&
+			    timestamp <= now && now - timestamp <= this.#SOURCE_TTL_MS;
+	    }
+
+	    static #lockCheckoutIdentity(context){
+		    this.#IMMUTABLE_CONTEXT_KEYS.forEach(function(key){
+			    Object.defineProperty(context, key, { value: context[key], enumerable: true, writable: false, configurable: false });
+		    });
+		    return context;
+	    }
+
 	    static #createCheckoutContext(plugin, parsed, link){
 		    const productSlug = this.#getProductSlug(plugin);
 		    const planSlug = this.#getPlanSlug(plugin, parsed.plan_id);
-		    return cleanObject({
+		    const cta = this.#getCtaLocation(link);
+		    // Capture exactly once on accepted initiation; callbacks only enrich mutable commerce fields.
+		    return this.#lockCheckoutIdentity(cleanObject(Object.assign({
 			    attempt_id: this.#createAttemptId(),
 			    checkout_id: this.#createCheckoutId(productSlug, planSlug),
 			    category: "freemius_checkout",
@@ -919,17 +999,18 @@
 			    product_name: plugin.product_name,
 			    billing_cycle: parsed.billing_cycle,
 			    licenses: parsed.licenses,
-			    coupon: parsed.coupon,
-			    trial: parsed.trial,
-			    is_trial: this.#isTrialCheckout(parsed.trial),
-			    cta_location: this.#getCtaLocation(link),
+			    coupon: this.#normalizeCoupon(parsed.coupon),
+			    trial: this.#normalizeTrial(parsed.trial),
+			    is_trial: this.#isTrialCheckout(this.#normalizeTrial(parsed.trial)),
+			    cta_location: cta,
 			    checkout_mode: "modal",
 			    affiliation: this.options.affiliation
-		    });
+		    }, this.#captureSourceContext(cta))));
 	    }
 
 	    static #normalizeEventName(event){
-		    return String(event || "unknown")
+		    if (!isString(event)) return "unknown";
+		    return event
 			    .trim()
 			    .toLowerCase()
 			    .replace(/[^a-z0-9]+/g, "_")
@@ -989,26 +1070,31 @@
 			    this.#getTrackedDataValue(data, ["billingCycle"]),
 			    this.#getTrackedDataValue(data, ["purchase", "billing_cycle"])
 		    );
-		    if (billingCycle !== undefined) context.billing_cycle = billingCycle;
+		    const normalizedBillingCycle = this.#normalizeBillingCycle(billingCycle);
+		    if (normalizedBillingCycle) context.billing_cycle = normalizedBillingCycle;
 
 		    const licenses = firstDefined(
 			    this.#getTrackedDataValue(data, ["licenses"]),
 			    this.#getTrackedDataValue(data, ["purchase", "licenses"])
 		    );
-		    if (licenses !== undefined) context.licenses = licenses;
+		    const normalizedLicenses = this.#normalizePurchaseQuantity(licenses);
+		    if (normalizedLicenses) context.licenses = normalizedLicenses;
 
 		    const coupon = firstDefined(
 			    this.#getTrackedDataValue(data, ["coupon"]),
 			    this.#getTrackedDataValue(data, ["coupon_id"]),
 			    this.#getTrackedDataValue(data, ["purchase", "coupon_id"])
 		    );
-		    if (coupon !== undefined) context.coupon = coupon;
+		    const normalizedCoupon = this.#normalizeCoupon(coupon);
+		    if (normalizedCoupon !== undefined) context.coupon = normalizedCoupon;
+		    else delete context.coupon;
 
 		    const currency = firstDefined(
 			    this.#getTrackedDataValue(data, ["currency"]),
 			    this.#getTrackedDataValue(data, ["purchase", "currency"])
 		    );
-		    if (isString(currency)) context.currency = currency.toUpperCase();
+		    const normalizedCurrency = this.#normalizePurchaseCurrency(currency);
+		    if (normalizedCurrency) context.currency = normalizedCurrency;
 
 		    return context;
 	    }
@@ -1020,58 +1106,142 @@
 		    this.#dispatchTrackingEvent(
 			    "freemius_checkout_" + normalizedEvent,
 			    this.#buildEventDetail(context, normalizedEvent, {
-				    freemius_event: event
+				    freemius_event: normalizedEvent
 			    })
 		    );
 	    }
 
-	    static #getPurchaseValue(purchase){
+	    static #getPurchaseValue(purchase, checkoutIsTrial){
 		    if (!isPlainObject(purchase)) return undefined;
-		    if (purchase.trial_ends !== undefined && purchase.trial_ends !== null) return 0;
+		    const hasTrialEnds = Object.prototype.hasOwnProperty.call(purchase, "trial_ends");
+		    const trialEnds = purchase.trial_ends;
+		    const parsedTrialEnds = isString(trialEnds) ? Date.parse(trialEnds) : NaN;
+		    const canonicalTrialEnds = Number.isFinite(parsedTrialEnds) ? new Date(parsedTrialEnds).toISOString() : "";
+		    const hasActualTrialMarker = isString(trialEnds) &&
+			    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(trialEnds) &&
+			    (trialEnds === canonicalTrialEnds || trialEnds === canonicalTrialEnds.replace(".000Z", "Z"));
+		    if (hasTrialEnds && trialEnds !== false && trialEnds !== null && !hasActualTrialMarker) return undefined;
+		    if (Boolean(checkoutIsTrial) !== hasActualTrialMarker) return undefined;
+		    if (hasActualTrialMarker) return 0;
 		    if (purchase.initial_amount !== undefined && purchase.initial_amount !== null) return purchase.initial_amount;
 		    return purchase.gross;
 	    }
 
+	    static #normalizeMoney(value){
+		    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+		    const scaled = value * 100;
+		    const cents = Math.round(scaled);
+		    if (!Number.isSafeInteger(cents) || Math.abs(scaled - cents) > 1e-7) return null;
+		    return {
+			    cents: cents,
+			    value: cents / 100
+		    };
+	    }
+
+	    static #normalizePurchaseQuantity(value){
+		    return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
+	    }
+
+	    static #normalizePurchaseCurrency(value){
+		    if (!isString(value)) return null;
+		    const normalized = value.trim().toUpperCase();
+		    return /^[A-Z]{3}$/.test(normalized) ? normalized : null;
+	    }
+
+	    static #normalizeCoupon(value){
+		    if (value === undefined || value === null || value === "") return undefined;
+		    if (!isString(value) || value.trim() !== value) return undefined;
+		    return /^(?!\d{7,}$)[A-Za-z0-9_-]{1,64}$/.test(value) ? value : undefined;
+	    }
+
+	    static #normalizeBillingCycle(value){
+		    return ["monthly", "annual", "lifetime", "none"].indexOf(value) !== -1 ? value : null;
+	    }
+
+	    static #normalizeTrial(value){
+		    return normalizeTrial(value);
+	    }
+
+	    static #normalizeTransactionId(value){
+		    if (typeof value === "number"){
+			    return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
+		    }
+		    if (!isString(value)) return null;
+		    return /^(?:[1-9]\d{0,19})$/.test(value) ? value : null;
+	    }
+
+	    static #getPurchaseState(context){
+		    let state = this.#PURCHASE_STATES.get(context);
+		    if (!state){
+			    state = {
+				    detail: null,
+				    confirmation_dispatched: false,
+				    success_dispatched: false
+			    };
+			    this.#PURCHASE_STATES.set(context, state);
+		    }
+		    return state;
+	    }
+
 	    static #buildPurchaseContext(plugin, context, response){
-		    if (!isPlainObject(response) || !isPlainObject(response.purchase)) return context;
+		    if (!isPlainObject(response) || !isPlainObject(response.purchase)) return null;
 		    const purchase = response.purchase;
-		    const currency = isString(purchase.currency) ? purchase.currency.toUpperCase() : context.currency;
-		    const value = this.#getPurchaseValue(purchase);
+		    const transactionId = this.#normalizeTransactionId(purchase.id);
+		    const money = this.#normalizeMoney(this.#getPurchaseValue(purchase, context.is_trial));
+		    const currency = this.#normalizePurchaseCurrency(
+			    purchase.currency !== undefined ? purchase.currency : context.currency
+		    );
+		    const quantity = this.#normalizePurchaseQuantity(
+			    purchase.licenses !== undefined ? purchase.licenses : context.licenses
+		    );
+		    if (!transactionId || !money || !currency || !quantity) return null;
+
 		    const purchasePlanId = firstDefined(purchase.plan_id, purchase.plan && purchase.plan.id);
 		    const planSlug = purchasePlanId !== undefined ? this.#getPlanSlug(plugin, purchasePlanId) : context.plan_slug;
-		    const quantity = firstDefined(purchase.licenses, context.licenses, 1);
+		    const unitPrice = money.cents === 0 ? 0 : money.cents / (100 * quantity);
 		    const item = cleanObject({
 			    item_id: context.product_slug,
 			    item_name: context.product_name,
 			    item_variant: planSlug,
 			    item_category: "Plugin",
-			    price: value,
+			    price: unitPrice,
 			    quantity: quantity,
 			    currency: currency
 		    });
-		    const purchaseContext = cleanObject(Object.assign({}, context, {
+		    return cleanObject(Object.assign({}, context, {
 			    checkout_stage: "purchase_confirmed",
-			    transaction_id: purchase.id !== undefined && purchase.id !== null ? String(purchase.id) : undefined,
-			    value: value,
+			    transaction_id: transactionId,
+			    value: money.value,
 			    currency: currency,
 			    plan_slug: planSlug,
-			    coupon: firstDefined(purchase.coupon_id, context.coupon),
-			    licenses: firstDefined(purchase.licenses, context.licenses),
+			    coupon: this.#normalizeCoupon(firstDefined(purchase.coupon_id, context.coupon)),
+			    licenses: quantity,
 			    item_id: context.product_slug,
 			    item_name: context.product_name,
 			    item_variant: planSlug,
 			    item_category: "Plugin",
 			    quantity: quantity,
-			    price: value,
+			    price: unitPrice,
 			    items: [item]
 		    }));
-		    Object.assign(context, purchaseContext);
-		    return purchaseContext;
+	    }
+
+	    static #resolvePurchaseContext(plugin, context, response){
+		    const state = this.#getPurchaseState(context);
+		    const candidate = this.#buildPurchaseContext(plugin, context, response);
+		    if (candidate && !state.detail){
+			    state.detail = candidate;
+			    Object.keys(candidate).forEach(function(key){
+				    if (!FooCheckout.#IMMUTABLE_CONTEXT_KEYS.includes(key)) context[key] = candidate[key];
+			    });
+		    }
+		    return state.detail;
 	    }
 
 	    static #storePurchaseContext(detail){
-		    if (typeof sessionStorage === "undefined" || !detail || !detail.checkout_id) return;
+		    if (!detail || !detail.checkout_id) return;
 		    try {
+			    if (typeof sessionStorage === "undefined") return;
 			    sessionStorage.setItem(this.#STORAGE_PREFIX + detail.checkout_id, JSON.stringify(detail));
 			    sessionStorage.setItem(this.#STORAGE_PREFIX + "latest", JSON.stringify(detail));
 		    } catch (err){
@@ -1080,19 +1250,26 @@
 	    }
 
 	    static #handlePurchaseCompleted(plugin, context, response){
-		    const detail = this.#buildPurchaseContext(plugin, context, response);
+		    const state = this.#getPurchaseState(context);
+		    const detail = this.#resolvePurchaseContext(plugin, context, response);
+		    if (!detail || state.confirmation_dispatched) return;
+		    state.confirmation_dispatched = true;
 		    this.#CHECKOUT_CONTEXTS.set(context.checkout_id, context);
 		    this.#storePurchaseContext(detail);
 		    this.#dispatchTrackingEvent("freemius_purchase_confirmed", detail);
 	    }
 
 	    static #handleCheckoutSuccess(plugin, context, response){
-		    const detail = this.#buildPurchaseContext(plugin, context, response);
+		    const state = this.#getPurchaseState(context);
+		    const detail = this.#resolvePurchaseContext(plugin, context, response);
+		    if (state.success_dispatched) return;
+		    state.success_dispatched = true;
 		    this.#CHECKOUT_CONTEXTS.set(context.checkout_id, context);
-		    this.#storePurchaseContext(detail);
-		    this.#dispatchTrackingEvent("freemius_checkout_success", this.#buildEventDetail(detail, "checkout_success"));
+		    if (detail) this.#storePurchaseContext(detail);
+		    const lifecycleDetail = detail || context;
+		    this.#dispatchTrackingEvent("freemius_checkout_success", this.#buildEventDetail(lifecycleDetail, "checkout_success"));
 
-		    const successUrl = this.#getSuccessUrl(plugin, detail);
+		    const successUrl = this.#getSuccessUrl(plugin, lifecycleDetail);
 		    if (isString(successUrl)){
 			    location.href = successUrl;
 		    }
@@ -1150,8 +1327,9 @@
 	    }
 
 	    static #getStoredPurchaseContext(checkoutId){
-		    if (!checkoutId || typeof sessionStorage === "undefined") return null;
+		    if (!checkoutId) return null;
 		    try {
+			    if (typeof sessionStorage === "undefined") return null;
 			    const storedValue = sessionStorage.getItem(this.#STORAGE_PREFIX + checkoutId);
 			    if (!storedValue) return null;
 			    const stored = JSON.parse(storedValue);
@@ -1161,29 +1339,155 @@
 		    }
 	    }
 
+	    static #hasOnlyOwnKeys(value, allowedKeys){
+		    return isPlainObject(value) && Object.keys(value).every(function(key){
+			    return allowedKeys.indexOf(key) !== -1;
+		    });
+	    }
+
+	    static #isConfiguredPlanSlug(plugin, planSlug){
+		    if (!isString(planSlug) || !planSlug) return false;
+		    if (planSlug === this.#getPlanSlug(plugin)) return true;
+		    const plans = plugin.plans || plugin.plan_slugs;
+		    if (isPlainObject(plans)){
+			    return Object.keys(plans).some(function(planId){
+				    return FooCheckout.#getPlanSlug(plugin, planId) === planSlug;
+			    });
+		    }
+		    if (Array.isArray(plans)){
+			    return plans.some(function(plan){
+				    if (!isPlainObject(plan)) return false;
+				    const planId = firstDefined(plan.plan_id, plan.id);
+				    return FooCheckout.#getPlanSlug(plugin, planId) === planSlug;
+			    });
+		    }
+		    return false;
+	    }
+
+	    // Match only identities this producer creates, not generic free-text tokens.
+	    static #isGeneratedAttemptId(value){
+		    return isString(value) && (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value) || /^attempt-[a-z0-9]{8,11}-[a-z0-9]{1,10}$/.test(value));
+	    }
+
+	    static #isGeneratedCheckoutId(plugin, value){
+		    if (!isString(value)) return false;
+		    const prefix = this.#getProductSlug(plugin) + "-";
+		    if (!value.startsWith(prefix)) return false;
+		    const tail = value.substring(prefix.length).match(/^(.+)-[a-z0-9]{8,11}-[a-z0-9]{1,8}$/);
+		    return !!tail && this.#isConfiguredPlanSlug(plugin, tail[1]);
+	    }
+
+	    static #revalidateStoredPurchaseContext(plugin, stored){
+		    const allowedKeys = [
+			    "attempt_id", "checkout_id", "category", "product_id", "plan_id", "product_slug",
+			    "plan_slug", "product_name", "billing_cycle", "licenses", "coupon", "trial", "is_trial",
+			    "cta_location", "checkout_mode", "affiliation", "checkout_stage", "transaction_id", "value",
+			    "currency", "item_id", "item_name", "item_variant", "item_category", "quantity", "price", "items",
+			    "source_context_version", "source_page", "source_cohort", "source_created_at"
+		    ];
+		    const allowedItemKeys = ["item_id", "item_name", "item_variant", "item_category", "price", "quantity", "currency"];
+		    if (!this.#hasOnlyOwnKeys(stored, allowedKeys) || !this.#isValidStoredSourceContext(stored) || !Array.isArray(stored.items) || stored.items.length !== 1) return null;
+		    const item = stored.items[0];
+		    if (!this.#hasOnlyOwnKeys(item, allowedItemKeys)) return null;
+
+		    const productSlug = this.#getProductSlug(plugin);
+		    const productName = plugin.product_name;
+		    const transactionId = this.#normalizeTransactionId(stored.transaction_id);
+		    const money = this.#normalizeMoney(stored.value);
+		    const currency = this.#normalizePurchaseCurrency(stored.currency);
+		    const quantity = this.#normalizePurchaseQuantity(stored.quantity);
+		    if (
+			    !transactionId || transactionId !== stored.transaction_id || !money || money.value !== stored.value ||
+			    !currency || currency !== stored.currency || !quantity || stored.licenses !== quantity ||
+			    stored.category !== "freemius_checkout" || stored.checkout_stage !== "purchase_confirmed" ||
+			    stored.product_id !== Number(plugin.product_id) || stored.product_slug !== productSlug ||
+			    stored.product_name !== productName || !this.#isConfiguredPlanSlug(plugin, stored.plan_slug) ||
+			    (stored.plan_id !== undefined && stored.plan_id !== 0 && (!Number.isSafeInteger(stored.plan_id) || stored.plan_id < 0 || this.#getPlanSlug(plugin, stored.plan_id) !== stored.plan_slug)) ||
+			    (stored.plan_id === 0 && this.#getPlanSlug(plugin) !== stored.plan_slug) ||
+			    (stored.billing_cycle !== undefined && this.#normalizeBillingCycle(stored.billing_cycle) !== stored.billing_cycle) ||
+			    (stored.coupon !== undefined && this.#normalizeCoupon(stored.coupon) !== stored.coupon) ||
+			    !["product_pricing_card", "product_pricing_sticky", "compare_hero", "compare_table", "compare_plan_section", "trial", "plan_advisor_result", "other"].includes(stored.cta_location) ||
+			    stored.item_id !== productSlug || stored.item_name !== productName ||
+			    stored.item_variant !== stored.plan_slug || stored.item_category !== "Plugin" ||
+			    stored.checkout_mode !== "modal" || typeof stored.is_trial !== "boolean" ||
+			    stored.trial !== this.#normalizeTrial(stored.trial) ||
+			    stored.is_trial !== this.#isTrialCheckout(stored.trial)
+		    ) return null;
+
+		    const unitPrice = money.cents === 0 ? 0 : money.cents / (100 * quantity);
+		    if (
+			    stored.price !== unitPrice || item.item_id !== productSlug || item.item_name !== productName ||
+			    item.item_variant !== stored.plan_slug || item.item_category !== "Plugin" ||
+			    item.price !== unitPrice || item.quantity !== quantity || item.currency !== currency
+		    ) return null;
+		    if (!this.#isGeneratedAttemptId(stored.attempt_id) || !this.#isGeneratedCheckoutId(plugin, stored.checkout_id)) return null;
+		    if (stored.affiliation !== undefined && stored.affiliation !== this.options.affiliation) return null;
+
+		    return cleanObject({
+			    attempt_id: stored.attempt_id,
+			    checkout_id: stored.checkout_id,
+			    source_context_version: stored.source_context_version,
+			    source_page: stored.source_page,
+			    source_cohort: stored.source_cohort,
+			    source_created_at: stored.source_created_at,
+			    category: "freemius_checkout",
+			    product_id: Number(plugin.product_id),
+			    plan_id: stored.plan_id,
+			    product_slug: productSlug,
+			    plan_slug: stored.plan_slug,
+			    product_name: productName,
+			    billing_cycle: stored.billing_cycle,
+			    licenses: quantity,
+			    coupon: this.#normalizeCoupon(stored.coupon),
+			    trial: stored.trial,
+			    is_trial: stored.is_trial,
+			    cta_location: stored.cta_location,
+			    checkout_mode: "modal",
+			    affiliation: this.options.affiliation,
+			    checkout_stage: "purchase_confirmed",
+			    transaction_id: transactionId,
+			    value: money.value,
+			    currency: currency,
+			    item_id: productSlug,
+			    item_name: productName,
+			    item_variant: stored.plan_slug,
+			    item_category: "Plugin",
+			    quantity: quantity,
+			    price: unitPrice,
+			    items: [{
+				    item_id: productSlug,
+				    item_name: productName,
+				    item_variant: stored.plan_slug,
+				    item_category: "Plugin",
+				    price: unitPrice,
+				    quantity: quantity,
+				    currency: currency
+			    }]
+		    });
+	    }
+
 	    static #getThankYouDetailFromUrl(){
 		    if (typeof window === "undefined" || !window.location || !window.location.search) return null;
 		    const params = isPlainObject(this.options.success_url_params) ? this.options.success_url_params : {};
 		    const urlParams = new URLSearchParams(window.location.search);
 		    const checkoutId = urlParams.get(params.checkout_id || "fs_checkout_id");
 		    const productSlug = urlParams.get(params.product_slug || "fs_product");
-		    if (!checkoutId || !productSlug || !this.#isCurrentSuccessUrl(productSlug)) return null;
+		    const plugin = this.#getPluginByProductSlug(productSlug);
+		    if (!checkoutId || !plugin || !this.#isCurrentSuccessUrl(productSlug)) return null;
 
 		    const stored = this.#getStoredPurchaseContext(checkoutId);
-		    if (!stored || stored.checkout_id !== checkoutId || stored.product_slug !== productSlug) return null;
+		    const validated = this.#revalidateStoredPurchaseContext(plugin, stored);
+		    if (!validated || validated.checkout_id !== checkoutId || validated.product_slug !== productSlug) return null;
 
 		    const planSlug = urlParams.get(params.plan_slug || "fs_plan");
-		    if (planSlug && stored.plan_slug && planSlug !== stored.plan_slug) return null;
+		    if (planSlug && planSlug !== validated.plan_slug) return null;
 
 		    const transactionId = urlParams.get(params.transaction_id || "fs_transaction");
-		    if (transactionId && stored.transaction_id && transactionId !== stored.transaction_id) return null;
+		    if (transactionId && transactionId !== validated.transaction_id) return null;
 
-		    return cleanObject(Object.assign({}, stored, {
-			    checkout_id: checkoutId,
-			    category: "freemius_checkout",
-			    product_slug: productSlug,
-			    plan_slug: planSlug || stored.plan_slug || this.options.default_plan,
-			    transaction_id: transactionId || stored.transaction_id,
+		    return cleanObject(Object.assign({}, validated, {
+			    plan_slug: planSlug || validated.plan_slug,
+			    transaction_id: transactionId || validated.transaction_id,
 			    checkout_stage: "thank_you_viewed",
 			    freemius_event: "thank_you_viewed"
 		    }));
@@ -1194,14 +1498,14 @@
 		    const detail = this.#getThankYouDetailFromUrl();
 		    if (!detail) return;
 		    this.#THANK_YOU_DISPATCHED = true;
-		    if (typeof sessionStorage !== "undefined" && detail.checkout_id){
-			    try {
-				    const sentKey = this.#STORAGE_PREFIX + "thank_you:" + detail.checkout_id;
-				    if (sessionStorage.getItem(sentKey)) return;
-				    sessionStorage.setItem(sentKey, "1");
-			    } catch (err){
-				    // Storage can be disabled by browser privacy settings.
-			    }
+		    try {
+			    if (typeof sessionStorage === "undefined" || !detail.checkout_id) return;
+			    const sentKey = this.#STORAGE_PREFIX + "thank_you:" + detail.checkout_id;
+			    if (sessionStorage.getItem(sentKey)) return;
+			    sessionStorage.setItem(sentKey, "1");
+		    } catch (err){
+			    // Reconstruction is fail-closed if the same-session dedup marker cannot be persisted.
+			    return;
 		    }
 		    this.#dispatchTrackingEvent("freemius_purchase_thank_you_viewed", detail);
 	    }

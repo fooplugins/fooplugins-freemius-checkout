@@ -1,0 +1,4 @@
+BASE_HEAD=8b5502bbe690ac20242074395e42b33b8dc7c1f3
+COMMAND=php tests/conversion-bridge-contract.php
+
+PASS: Conversion Bridge definitions are vendor-neutral and preserve lifecycle diagnostics.

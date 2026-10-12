@@ -1,0 +1,13 @@
+BASE_HEAD=8b5502bbe690ac20242074395e42b33b8dc7c1f3
+COMMAND=node tests/checkout-lifecycle.test.js
+
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testStoredThankYouContextIsStrictlyRevalidated
+PASS: testCouponContextRejectsPiiAndCoerciveValues
+AssertionError [ERR_ASSERTION]: An arbitrary track event value must not be copied into event detail.
+
+true !== false
+
+    at testArbitraryTrackEventNameCannotLeakNestedData (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:368:10)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:544:5)

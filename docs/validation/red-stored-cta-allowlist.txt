@@ -1,0 +1,9 @@
+Stored CTA allowlist RED evidence
+
+Independent frozen-diff review probe against checkout commit 46793868f3297ff0d70e570a6201ec6b1885b9de exercised actual open -> purchaseCompleted/success -> stored context -> generated redirect -> thank-you reconstruction for every code-owned CTA location.
+
+Observed failure:
+- `plan_advisor_result`: purchase confirmation stored, but zero `freemius_purchase_thank_you_viewed` events because stored-context validation omitted this otherwise accepted value.
+- `product_pricing_sticky`: opening normalization collapsed it to `other`, losing the FSE-owned attribution value.
+
+The pre-fix canonical JS lifecycle suite still reported 10/10 passing, proving its missing CTA lifecycle coverage. The remediation aligns the open-time and stored-context allowlists and adds all-CTA and cross-repository lifecycle regressions.

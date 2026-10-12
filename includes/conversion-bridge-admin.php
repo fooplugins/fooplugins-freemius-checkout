@@ -62,15 +62,28 @@ function fooplugins_freemius_checkout_cb_event_id( $product, $requirement, $defi
 	return FOOPLUGINS_FREEMIUS_CHECKOUT_CB_EVENT_ID_PREFIX . md5( $product['product_slug'] . '|' . $requirement . '|' . $definition['event'] );
 }
 
-function fooplugins_freemius_checkout_cb_common_parameters( $product ) {
+function fooplugins_freemius_checkout_cb_source_parameters() {
 	return array(
-		'checkout_id'    => '%%e.detail.checkout_id%%',
-		'product_slug'   => '%%e.detail.product_slug%%',
-		'plan_slug'      => '%%e.detail.plan_slug%%',
-		'checkout_stage' => '%%e.detail.checkout_stage%%',
-		'billing_cycle'  => '%%e.detail.billing_cycle%%',
-		'licenses'       => '%%e.detail.licenses%%',
-		'coupon'         => '%%e.detail.coupon%%',
+		'attempt_id'             => '%%e.detail.attempt_id%%',
+		'checkout_id'            => '%%e.detail.checkout_id%%',
+		'source_context_version' => '%%e.detail.source_context_version%%',
+		'source_page'            => '%%e.detail.source_page%%',
+		'source_cohort'          => '%%e.detail.source_cohort%%',
+		'source_created_at'      => '%%e.detail.source_created_at%%',
+	);
+}
+
+function fooplugins_freemius_checkout_cb_common_parameters( $product ) {
+	return array_merge(
+		fooplugins_freemius_checkout_cb_source_parameters(),
+		array(
+			'product_slug'   => '%%e.detail.product_slug%%',
+			'plan_slug'      => '%%e.detail.plan_slug%%',
+			'checkout_stage' => '%%e.detail.checkout_stage%%',
+			'billing_cycle'  => '%%e.detail.billing_cycle%%',
+			'licenses'       => '%%e.detail.licenses%%',
+			'coupon'         => '%%e.detail.coupon%%',
+		)
 	);
 }
 
@@ -91,15 +104,17 @@ function fooplugins_freemius_checkout_cb_purchase_parameters( $product ) {
 }
 
 function fooplugins_freemius_checkout_cb_diagnostic_common_parameters() {
-	return array(
-		'attempt_id'    => '%%e.detail.attempt_id%%',
-		'product_id'    => '%%e.detail.product_id%%',
-		'plan_id'       => '%%e.detail.plan_id%%',
-		'licenses'      => '%%e.detail.licenses%%',
-		'billing_cycle' => '%%e.detail.billing_cycle%%',
-		'is_trial'      => '%%e.detail.is_trial%%',
-		'cta_location'  => '%%e.detail.cta_location%%',
-		'checkout_mode' => '%%e.detail.checkout_mode%%',
+	return array_merge(
+		fooplugins_freemius_checkout_cb_source_parameters(),
+		array(
+			'product_id'    => '%%e.detail.product_id%%',
+			'plan_id'       => '%%e.detail.plan_id%%',
+			'licenses'      => '%%e.detail.licenses%%',
+			'billing_cycle' => '%%e.detail.billing_cycle%%',
+			'is_trial'      => '%%e.detail.is_trial%%',
+			'cta_location'  => '%%e.detail.cta_location%%',
+			'checkout_mode' => '%%e.detail.checkout_mode%%',
+		)
 	);
 }
 
@@ -235,16 +250,6 @@ function fooplugins_freemius_checkout_cb_required_events( $product ) {
 			'selector'    => 'document',
 			'event'       => fooplugins_freemius_checkout_cb_event_name( $product_slug, 'freemius_purchase_confirmed' ),
 			'value'       => '',
-			'parameters'  => fooplugins_freemius_checkout_cb_purchase_parameters( $product ),
-		),
-		'thank_you_purchase' => array(
-			'label'       => __( 'Thank-you purchase', 'fooplugins-freemius-checkout' ),
-			'description' => __( 'The GA4 purchase event fired on the purchase thank-you page.', 'fooplugins-freemius-checkout' ),
-			'trigger'     => 'event',
-			'type'        => 'purchase',
-			'selector'    => 'document',
-			'event'       => fooplugins_freemius_checkout_cb_event_name( $product_slug, 'freemius_purchase_thank_you_viewed' ),
-			'value'       => '%%e.detail.value%%',
 			'parameters'  => fooplugins_freemius_checkout_cb_purchase_parameters( $product ),
 		),
 	);

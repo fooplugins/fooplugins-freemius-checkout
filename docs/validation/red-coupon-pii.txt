@@ -1,0 +1,11 @@
+BASE_HEAD=8b5502bbe690ac20242074395e42b33b8dc7c1f3
+COMMAND=node tests/checkout-lifecycle.test.js
+
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+AssertionError [ERR_ASSERTION]: nested stored coupon PII must fail closed before thank-you dispatch.
+
+1 !== 0
+
+    at testStoredThankYouContextIsStrictlyRevalidated (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:323:12)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:507:5)

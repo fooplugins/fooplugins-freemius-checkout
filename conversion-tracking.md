@@ -79,6 +79,12 @@ billing_cycle=none
 
 These defaults are merged into every `FS.Checkout.open()` call. URL-specific values still override defaults, so a checkout link with `?billing_cycle=annual` opens with `annual` even though the saved default is `none`.
 
+## Immutable checkout source (v2)
+
+Every diagnostic and shared/product-scoped lifecycle event carries top-level `source_context_version: 2`, `source_page`, `source_cohort`, and initiation-time `source_created_at`, alongside the same `attempt_id` and `checkout_id`. Source is captured once from the real initiating page's closed pathname projection and controlled CTA, never from queries, redirects, or callbacks. Cancellation/retry/new accepted actions create fresh IDs. `transaction_id` remains the actual validated payment ID, not an initiating ID.
+
+See the [complete wire contract](docs/checkout-cohort-contract.md) for canonical paths, closed cohort precedence, 30-minute reconstruction TTL, blocked-storage behavior, and executable validation. Unknown paths emit `source_page=unknown`; documentation suffixes collapse to `/documentation/`. Invalid/missing/expired stored source suppresses reconstruction rather than inventing attribution.
+
 ## Lifecycle
 
 1. A checkout link is clicked.
@@ -130,7 +136,7 @@ The four `fooplugins_checkout_*` reliability events are global and are emitted o
 
 ## Reliability Diagnostic Payload
 
-All four diagnostics include `attempt_id`, numeric `product_id`, numeric `plan_id`, numeric `licenses`, `billing_cycle`, boolean `is_trial`, controlled `cta_location`, and `checkout_mode=modal`. Opened adds `checkout_load_ms`; failure adds `failure_stage`, `error_code`, and `checkout_load_ms`; cancellation adds `checkout_open_duration_ms`.
+All four diagnostics include `attempt_id`, `checkout_id`, `source_context_version`, `source_page`, `source_cohort`, `source_created_at`, numeric `product_id`, numeric `plan_id`, numeric `licenses`, `billing_cycle`, boolean `is_trial`, controlled `cta_location`, and `checkout_mode=modal`. Opened adds `checkout_load_ms`; failure adds `failure_stage`, `error_code`, and `checkout_load_ms`; cancellation adds `checkout_open_duration_ms`.
 
 `attempt_id` is intentionally high cardinality. Send it with the events for debugging and event pairing, but do not register it as a GA4 custom dimension. No raw exception, stack, email, name, token, license key, or payment data is included.
 
@@ -158,32 +164,36 @@ Base checkout events include fields like:
 }
 ```
 
-Purchase events can add:
+Purchase events add a validated commerce context:
 
 ```json
 {
   "transaction_id": "123456",
-  "value": 49,
+  "value": 100,
   "currency": "USD",
   "item_id": "foogallery",
   "item_name": "FooGallery",
   "item_variant": "pro-starter",
   "item_category": "Plugin",
-  "quantity": 1,
-  "price": 49,
+  "quantity": 3,
+  "price": 33.333333333333336,
   "items": [
     {
       "item_id": "foogallery",
       "item_name": "FooGallery",
       "item_variant": "pro-starter",
       "item_category": "Plugin",
-      "price": 49,
-      "quantity": 1,
+      "price": 33.333333333333336,
+      "quantity": 3,
       "currency": "USD"
     }
   ]
 }
 ```
+
+`value` is the total transaction amount, normalized to exact cents. `price` and `items[0].price` are the deterministic unit price `value / quantity`; multiplying unit price by quantity and rounding to cents therefore reconciles to `value`. A zero-value trial produces zero for both total and unit price.
+
+Commerce context is fail-closed. The producer requires a positive decimal Freemius purchase ID (`^[1-9][0-9]{0,19}$`), a finite non-negative numeric amount with no fractional cents, a three-letter currency code, and a positive integer numeric quantity. Optional coupons are retained only as trimmed ASCII campaign tokens (`[A-Za-z0-9_-]`, at most 64 characters, and not a phone-shaped all-digit value); objects, emails, phone values, Unicode names, and other coercive coupon data are omitted before dispatch or storage. Arbitrary identifiers, zero IDs, numeric amount strings, invalid currencies, negative/non-finite values, fractional-cent totals, and coercive quantities do not emit `freemius_purchase_confirmed`, are not stored for the thank-you marker, and are not added to redirect parameters. A success callback still emits its non-commerce lifecycle event and redirects without manufactured commerce fields. If one Freemius callback is partial after another callback supplied a valid purchase, the first validated context is reused. Duplicate or reordered callbacks do not duplicate the confirmed or success lifecycle event.
 
 The plugin intentionally does not forward raw Freemius response data or buyer email addresses.
 
@@ -207,7 +217,7 @@ The thank-you event is only dispatched when the current path matches the configu
 
 Create a Conversion Bridge custom event for each lifecycle event you want to track.
 
-The plugin includes an admin setup page at Settings > Freemius Checkout. Its global diagnostics panel creates and validates the four reliability events once. The product panel continues to create and validate the existing product-scoped ecommerce events.
+The plugin includes an admin setup page at Settings > Freemius Checkout. Its global diagnostics panel creates and validates the four reliability events once. The product panel creates and validates only three product-scoped lifecycle definitions. It does not create a thank-you `purchase` mapping or configure a GA4, Meta, or other destination-specific purchase route.
 
 Required baseline for a product such as FooGallery:
 
@@ -215,12 +225,11 @@ Required baseline for a product such as FooGallery:
 | --- | --- | --- | --- | --- |
 | Checkout opened | Event | `document` | `foogallery_freemius_checkout_opened` | `begin_checkout` |
 | Review order | Event | `document` | `foogallery_freemius_checkout_review_order` | `add_payment_info` |
-| Purchase confirmed | Event | `document` | `foogallery_freemius_purchase_confirmed` | `freemius_purchase_confirmed` |
-| Thank-you purchase | Event | `document` | `foogallery_freemius_purchase_thank_you_viewed` | `purchase` |
+| Purchase confirmed diagnostic | Event | `document` | `foogallery_freemius_purchase_confirmed` | `freemius_purchase_confirmed` |
 
-Use only one event as the real GA4 `purchase` event. If purchase completion is defined as "the user reached the purchase thank-you page", use the product-scoped thank-you event, for example `foogallery_freemius_purchase_thank_you_viewed`, as `purchase` and keep the product-scoped confirmed event, for example `foogallery_freemius_purchase_confirmed`, as a custom diagnostic event. Mapping both as `purchase` will double count revenue.
+The required-event setup/repair contract ends at those three lifecycle definitions. Destination owners may consume vendor-neutral browser lifecycle events separately, but this plugin's supported setup must never create or repair a `purchase` destination mapping. In particular, mapping both confirmation and thank-you events as `purchase` can double count revenue.
 
-Register aggregate GA4 dimensions for `product_id`, `plan_id`, `licenses`, `cta_location`, `checkout_mode`, `failure_stage`, and `is_trial`, plus a custom metric for `checkout_load_ms`. Leave `attempt_id`, `error_code`, and open duration unregistered. Build the reliability funnel from `fooplugins_checkout_attempt` to `fooplugins_checkout_opened` to the existing valid `purchase` event.
+Register aggregate GA4 dimensions for closed `source_page`, `source_cohort`, configured `product_slug`/`plan_slug`, `licenses`, `cta_location`, `checkout_mode`, `failure_stage`, and `is_trial`, plus a custom metric for `checkout_load_ms`. Never register/use `attempt_id`, `checkout_id`, `transaction_id`, raw Freemius product/plan IDs, or `source_created_at` as reporting/custom dimensions. Initiating IDs are linkage/dedup/debug keys, and the transaction ID remains a transaction field only. Leave `error_code` and open duration unregistered. Build the reliability funnel from `fooplugins_checkout_attempt` to `fooplugins_checkout_opened` to the existing valid `purchase` event.
 
 ### Custom Parameters
 
@@ -230,7 +239,12 @@ Suggested parameters:
 
 | Key | Value |
 | --- | --- |
+| `attempt_id` | `%%e.detail.attempt_id%%` |
 | `checkout_id` | `%%e.detail.checkout_id%%` |
+| `source_context_version` | `%%e.detail.source_context_version%%` |
+| `source_page` | `%%e.detail.source_page%%` |
+| `source_cohort` | `%%e.detail.source_cohort%%` |
+| `source_created_at` | `%%e.detail.source_created_at%%` |
 | `product_slug` | `%%e.detail.product_slug%%` |
 | `plan_slug` | `%%e.detail.plan_slug%%` |
 | `checkout_stage` | `%%e.detail.checkout_stage%%` |
@@ -246,13 +260,7 @@ Suggested parameters:
 | `quantity` | `%%e.detail.quantity%%` |
 | `items` | `%%e.detail.items%%` |
 
-For the Conversion Bridge event value field on the purchase event, use:
-
-```text
-%%e.detail.value%%
-```
-
-For GA4 purchase events, include `items=%%e.detail.items%%`. Conversion Bridge preserves this placeholder as a runtime JavaScript value, so GA4 receives an actual ecommerce `items` array instead of a string.
+The commerce fields are documented for destination owners and diagnostics. They are not instructions for creating a Conversion Bridge `purchase` mapping.
 
 ## Example Event Configurations
 
@@ -301,33 +309,9 @@ checkout_stage=%%e.detail.checkout_stage%%
 currency=%%e.detail.currency%%
 ```
 
-### Final Purchase On Thank-You Page
+### Purchase lifecycle ownership
 
-Use this if the source of truth for purchase completion is the redirect to `/purchase-thanks/`.
-
-```text
-Trigger: Event
-Selector: document
-Event name: foogallery_freemius_purchase_thank_you_viewed
-Event type: purchase
-Value: %%e.detail.value%%
-```
-
-Parameters:
-
-```text
-transaction_id=%%e.detail.transaction_id%%
-checkout_id=%%e.detail.checkout_id%%
-product_slug=%%e.detail.product_slug%%
-plan_slug=%%e.detail.plan_slug%%
-currency=%%e.detail.currency%%
-value=%%e.detail.value%%
-item_id=%%e.detail.item_id%%
-item_name=%%e.detail.item_name%%
-item_variant=%%e.detail.item_variant%%
-quantity=%%e.detail.quantity%%
-items=%%e.detail.items%%
-```
+`freemius_purchase_confirmed` and `freemius_purchase_thank_you_viewed` remain vendor-neutral browser lifecycle events. The required-event builder exposes only the confirmation diagnostic and intentionally omits a destination purchase mapping. A separate owning integration must validate and route any final purchase event exactly once.
 
 ## Debugging
 
@@ -363,40 +347,4 @@ Paste this into the browser console on a checkout page to inspect emitted events
 });
 ```
 
-The thank-you event cannot be tested by opening a crafted URL by itself. To test it manually, first create a matching stored purchase context in the browser console, then open the matching thank-you URL:
-
-```js
-sessionStorage.setItem(
-  "fooplugins_freemius_checkout:test-123",
-  JSON.stringify({
-    checkout_id: "test-123",
-    category: "freemius_checkout",
-    product_slug: "foogallery",
-    plan_slug: "pro-starter",
-    product_name: "FooGallery",
-    transaction_id: "txn-123",
-    value: 49,
-    currency: "USD",
-    item_id: "foogallery",
-    item_name: "FooGallery",
-    item_variant: "pro-starter",
-    quantity: 1,
-    items: [
-      {
-        item_id: "foogallery",
-        item_name: "FooGallery",
-        item_variant: "pro-starter",
-        quantity: 1,
-        price: 49,
-        currency: "USD"
-      }
-    ]
-  })
-);
-```
-
-```text
-/purchase-thanks/?fs_checkout_id=test-123&fs_product=foogallery&fs_plan=pro-starter&fs_transaction=txn-123
-```
-
-That should emit `freemius_purchase_thank_you_viewed` only when `/purchase-thanks/` is the configured success URL path.
+The thank-you event cannot be tested by opening only a crafted URL because a matching, schema-valid same-session context is also required. This is a client-side minimization and consistency boundary, not cryptographic proof of callback provenance: a user controlling their own browser storage can synthesize a fully valid context, but arbitrary fields and malformed values are rejected and are not forwarded. Use `node tests/checkout-lifecycle.test.js` for the real callback, generated-redirect, storage-reconstruction, and reload path without making a purchase.

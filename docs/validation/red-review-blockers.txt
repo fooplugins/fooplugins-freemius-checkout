@@ -1,0 +1,29 @@
+Checkout review-blocker RED evidence
+
+All commands were run from the clean branch worktree before the corresponding production fix. Base HEAD remained 8b5502bbe690ac20242074395e42b33b8dc7c1f3. The candidate snapshot includes the pre-existing uncommitted remediation plus the newly added failing test.
+
+1. Stored thank-you context revalidation
+
+Candidate snapshot SHA-256: a59377669eef4a8743542e6ff473168af162f7e636db6b2841055b2fcf016c52
+Command: node tests/checkout-lifecycle.test.js
+Exit: 1
+Observed failure: AssertionError: unexpected stored buyer field must fail closed before thank-you dispatch (actual event count 1, expected 0).
+Reason: the old thank-you reconstruction accepted an arbitrary parsed sessionStorage object and forwarded its fields.
+
+2. Trial marker/value contradiction
+
+Candidate snapshot SHA-256: 7128164de95c04ef6a5cf60c815d95caab85dd71946f39351310c4d054be3f00
+Command: node tests/checkout-lifecycle.test.js
+Exit: 1
+Observed failure: AssertionError: paid checkout with a trial end timestamp must not emit purchase confirmation (actual event count 1, expected 0).
+Reason: the old value selector treated any non-null trial_ends as a zero-value trial without cross-checking the checkout's trial state.
+
+3. Exact transaction-ID syntax
+
+Candidate snapshot SHA-256: 4e895d5fd23927c9b3ba91275142ded1edace1f0c163ad4936e3f868aa9de385
+Command: node tests/checkout-lifecycle.test.js
+Exit: 1
+Observed failure: AssertionError: whitespace-padded transaction identifier must not emit purchase confirmation (actual event count 1, expected 0).
+Reason: the old validator trimmed the input before applying the positive-decimal purchase-ID regex.
+
+These are direct outputs retained from the strict RED runs recorded in the implementation transcript. GREEN and independently reproducible post-fix mutation evidence are in green-js.txt and sabotage.txt.

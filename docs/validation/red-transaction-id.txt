@@ -1,0 +1,9 @@
+PASS: testCompletePartialAndThankYouLifecycle
+PASS: testMultiLicenseReorderedAndDuplicateCallbacks
+PASS: testTrialPurchaseUsesZeroTotalAndUnitPrice
+AssertionError [ERR_ASSERTION]: non-numeric transaction identifier must not emit purchase confirmation.
+
+1 !== 0
+
+    at testInvalidCoerciveCommerceValuesFailClosed (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:333:12)
+    at async main (/home/brad/repos/worktrees/fooplugins-freemius-checkout-ga4-contract/tests/checkout-lifecycle.test.js:354:5)

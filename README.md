@@ -17,7 +17,7 @@ Once activated, the plugin hooks up all anchor tags that point to Freemius Check
 - Redirects the current page to the original hosted checkout URL if loading, handler creation, modal opening, or rendering fails
 - Emits checkout attempt, visible-open, failure, and cancellation diagnostics through browser events for Conversion Bridge
 - Configurable success URL after purchase (global or per product)
-- After purchase tracking : Google Analytics 4 and Facebook Pixel
+- Emits vendor-neutral checkout and purchase lifecycle events for analytics bridges; the plugin does not call or configure GA4, Meta, or another destination directly
 - Supports URL's with trials and coupons
 - Supports Freemius dunning mechanism (if configured in your Freemius dashboard)
 - Auto-appends coupon querystring to all checkout url's if on the current page 
@@ -85,7 +85,9 @@ Known CTA locations can be reported with a controlled attribute:
 >Buy</a>
 ```
 
-Supported values are `product_pricing_card`, `compare_hero`, `compare_table`, `compare_plan_section`, and `trial`. Untagged or unknown values are reported as `other`.
+Supported values are `product_pricing_card`, `product_pricing_sticky`, `compare_hero`, `compare_table`, `compare_plan_section`, `trial`, `plan_advisor_result`, and `other`. Untagged or unknown values are reported as `other`.
+
+Checkout events carry immutable, privacy-safe `source_context_version: 2`, `source_page`, `source_cohort`, and initiation-time `source_created_at` alongside `attempt_id` and `checkout_id`. Source is captured from the real initiating page/controlled CTA, never a query string or callback. Same-session thank-you reconstruction expires after 30 minutes and fails closed on missing, inconsistent, or invalid source. See the [wire contract, closed page/cohort allowlists, ID semantics, reporting restrictions, and executable verification](docs/checkout-cohort-contract.md).
 
 ### Freemius Documentation
 
