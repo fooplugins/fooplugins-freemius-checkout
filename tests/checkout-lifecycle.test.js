@@ -36,6 +36,14 @@ function createRuntime(options = {}) {
   let checkoutOptions = null;
   let uuidCounter = 0;
   let timerCounter = 0;
+  let now = options.now === undefined ? Date.now() : options.now;
+  let frames = [];
+  let openCount = 0;
+  const intervals = new Map();
+  const timeouts = new Map();
+  class RuntimeDate extends Date {
+    static now() { return now; }
+  }
 
   class FakeCustomEvent {
     constructor(type, init) {
@@ -59,8 +67,8 @@ function createRuntime(options = {}) {
       (listeners.get(event.type) || []).forEach((callback) => callback(event));
       return true;
     },
-    querySelectorAll() {
-      return [];
+    querySelectorAll(selector) {
+      return selector.startsWith('iframe[') ? frames : [];
     },
     querySelector() {
       return null;
@@ -92,7 +100,8 @@ function createRuntime(options = {}) {
 
     open(nextCheckoutOptions) {
       checkoutOptions = nextCheckoutOptions;
-      return true;
+      openCount += 1;
+      return options.rejectOpen ? false : true;
     }
   }
 
@@ -130,16 +139,18 @@ function createRuntime(options = {}) {
     },
     performance: { now: () => 100 },
     getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }),
-    setTimeout() {
+    setTimeout(callback, delay) {
       timerCounter += 1;
+      timeouts.set(timerCounter, { callback, delay });
       return timerCounter;
     },
-    clearTimeout() {},
-    setInterval() {
+    clearTimeout(id) { timeouts.delete(id); },
+    setInterval(callback) {
       timerCounter += 1;
+      intervals.set(timerCounter, callback);
       return timerCounter;
     },
-    clearInterval() {},
+    clearInterval(id) { intervals.delete(id); },
     addEventListener() {}
   };
   window.window = window;
@@ -153,6 +164,7 @@ function createRuntime(options = {}) {
     URL,
     URLSearchParams,
     console,
+    Date: RuntimeDate,
     crypto: window.crypto,
     performance: window.performance,
     setTimeout: window.setTimeout,
@@ -162,12 +174,35 @@ function createRuntime(options = {}) {
     MutationObserver: undefined
   };
 
+  if (options.blockedStorageAccess) {
+    for (const target of [window, sandbox]) {
+      Object.defineProperty(target, 'sessionStorage', {
+        get() { throw new Error('storage access denied'); }
+      });
+    }
+  }
   vm.runInNewContext(producerSource, sandbox, { filename: 'js/fooplugins-freemius.js' });
 
   return {
     FooCheckout: window.FooCheckout,
     records,
     storage,
+    document,
+    navigate(url) { location.href = url; },
+    advance(ms) { now += ms; },
+    get now() { return now; },
+    get openCount() { return openCount; },
+    showCheckout() {
+      frames = [{
+        src: 'https://checkout.freemius.com/fixture/',
+        getAttribute(name) { return name === 'src' ? this.src : null; },
+        getBoundingClientRect() { return { width: 800, height: 600 }; }
+      }];
+      [...intervals.values()].forEach((callback) => callback());
+    },
+    expireOpen() {
+      [...timeouts.values()].filter(({ delay }) => delay >= 100).forEach(({ callback }) => callback());
+    },
     get href() {
       return currentHref;
     },
@@ -578,7 +613,11 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error.stack || error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.stack || error);
+    process.exit(1);
+  });
+}
+
+module.exports = { MemoryStorage, createRuntime, openCheckout, events, snapshot, assertReconciled };

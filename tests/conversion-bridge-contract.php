@@ -74,4 +74,19 @@ foreach ( $diagnostics as $requirement => $definition ) {
 	contract_assert( 0 === strpos( $definition['event'], 'fooplugins_checkout_' ), "Global diagnostic {$requirement} must retain its unscoped event." );
 }
 
-fwrite( STDOUT, "PASS: Conversion Bridge definitions are vendor-neutral and preserve lifecycle diagnostics.\n" );
+function assert_source_linkage_parameters( $parameters, $label ) {
+	foreach ( array( 'attempt_id', 'checkout_id', 'source_context_version', 'source_page', 'source_cohort', 'source_created_at' ) as $key ) {
+		contract_assert( isset( $parameters[$key] ) && $parameters[$key] === '%%e.detail.' . $key . '%%', "{$label} must forward immutable {$key} from event detail only." );
+	}
+}
+
+foreach ( $products as $product ) {
+	foreach ( fooplugins_freemius_checkout_cb_required_events( $product ) as $key => $definition ) {
+		assert_source_linkage_parameters( $definition['parameters'], $key );
+	}
+}
+foreach ( $diagnostics as $key => $definition ) {
+	assert_source_linkage_parameters( $definition['parameters'], $key );
+}
+
+fwrite( STDOUT, "PASS: Conversion Bridge definitions are vendor-neutral and preserve lifecycle diagnostics and immutable source linkage.\n" );

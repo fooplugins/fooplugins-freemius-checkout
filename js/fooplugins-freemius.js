@@ -246,6 +246,27 @@
 	    static #PURCHASE_STATES = new WeakMap();
 	    static #STORAGE_PREFIX = "fooplugins_freemius_checkout:";
 	    static #THANK_YOU_DISPATCHED = false;
+	    static #SOURCE_CONTEXT_VERSION = 2;
+	    static #SOURCE_TTL_MS = 30 * 60 * 1000;
+	    static #SOURCE_COMPARE_PAGE = "/foogallery-wordpress-gallery-plugin/compare-plans/";
+	    static #SOURCE_PRICING_PAGES = Object.freeze([
+		    "/foogallery-wordpress-gallery-plugin/", "/foobox/",
+		    "/foobar-wordpress-notification-bars/", "/fooconvert/",
+		    "/foopass-bundle/", "/bundles/"
+	    ]);
+	    static #SOURCE_ADDON_PAGES = Object.freeze([
+		    "/foogallery-wordpress-gallery-plugin/user-uploads/",
+		    "/foogallery-wordpress-gallery-plugin/social/",
+		    "/foogallery-wordpress-gallery-plugin/whitelabel/",
+		    "/foogallery-wordpress-gallery-plugin/client-proofing/"
+	    ]);
+	    static #SOURCE_COHORTS = Object.freeze([
+		    "compare_plans", "plan_advisor", "product_pricing", "addon", "documentation", "trial", "unknown"
+	    ]);
+	    static #IMMUTABLE_CONTEXT_KEYS = Object.freeze([
+		    "attempt_id", "checkout_id", "cta_location",
+		    "source_context_version", "source_page", "source_cohort", "source_created_at"
+	    ]);
 	    /**
 	     * The Regular Expressions used to parse the url.
 	     * @private
@@ -610,7 +631,8 @@
 
 	    static #getCtaLocation(link){
 		    const allowed = ["product_pricing_card", "product_pricing_sticky", "compare_hero", "compare_table", "compare_plan_section", "trial", "plan_advisor_result", "other"];
-		    const location = link && link.dataset ? String(link.dataset.checkoutLocation || "").trim().toLowerCase() : "";
+		    const value = link && link.dataset ? link.dataset.checkoutLocation : undefined;
+		    const location = isString(value) ? value.trim().toLowerCase() : "";
 		    return allowed.indexOf(location) !== -1 ? location : "other";
 	    }
 
@@ -763,6 +785,11 @@
 		    const context = attempt && attempt.context ? attempt.context : {};
 		    return cleanObject(Object.assign({
 			    attempt_id: context.attempt_id,
+			    checkout_id: context.checkout_id,
+			    source_context_version: context.source_context_version,
+			    source_page: context.source_page,
+			    source_cohort: context.source_cohort,
+			    source_created_at: context.source_created_at,
 			    product_id: Number(context.product_id) || 0,
 			    plan_id: Number(context.plan_id) || 0,
 			    licenses: Number(context.licenses) || 1,
@@ -906,10 +933,62 @@
 			    .join("-");
 	    }
 
+	    // Closed pathname projection: never retain a URL, query, fragment, or documentation suffix.
+	    static #normalizeSourcePage(path){
+		    if (!isString(path)) return "unknown";
+		    if (path === this.#SOURCE_COMPARE_PAGE || this.#SOURCE_PRICING_PAGES.includes(path) || this.#SOURCE_ADDON_PAGES.includes(path)) return path;
+		    if (path.indexOf("/documentation/") === 0) return "/documentation/";
+		    return "unknown";
+	    }
+
+	    static #getSourceCohort(page, cta){
+		    if (cta === "trial") return "trial";
+		    if (cta === "plan_advisor_result") return "plan_advisor";
+		    if (page === this.#SOURCE_COMPARE_PAGE) return "compare_plans";
+		    if (this.#SOURCE_ADDON_PAGES.includes(page)) return "addon";
+		    if (page === "/documentation/") return "documentation";
+		    if (this.#SOURCE_PRICING_PAGES.includes(page)) return "product_pricing";
+		    return "unknown";
+	    }
+
+	    static #captureSourceContext(cta){
+		    let page = "unknown";
+		    try {
+			    page = this.#normalizeSourcePage(new URL(window.location.href).pathname);
+		    } catch (err){}
+		    return {
+			    source_context_version: this.#SOURCE_CONTEXT_VERSION,
+			    source_page: page,
+			    source_cohort: this.#getSourceCohort(page, cta),
+			    source_created_at: Date.now()
+		    };
+	    }
+
+	    static #isValidStoredSourceContext(stored){
+		    const timestamp = stored.source_created_at;
+		    const now = Date.now();
+		    return stored.source_context_version === this.#SOURCE_CONTEXT_VERSION &&
+			    isString(stored.source_page) &&
+			    this.#normalizeSourcePage(stored.source_page) === stored.source_page &&
+			    this.#SOURCE_COHORTS.includes(stored.source_cohort) &&
+			    this.#getSourceCohort(stored.source_page, stored.cta_location) === stored.source_cohort &&
+			    Number.isSafeInteger(timestamp) && timestamp >= 0 &&
+			    timestamp <= now && now - timestamp <= this.#SOURCE_TTL_MS;
+	    }
+
+	    static #lockCheckoutIdentity(context){
+		    this.#IMMUTABLE_CONTEXT_KEYS.forEach(function(key){
+			    Object.defineProperty(context, key, { value: context[key], enumerable: true, writable: false, configurable: false });
+		    });
+		    return context;
+	    }
+
 	    static #createCheckoutContext(plugin, parsed, link){
 		    const productSlug = this.#getProductSlug(plugin);
 		    const planSlug = this.#getPlanSlug(plugin, parsed.plan_id);
-		    return cleanObject({
+		    const cta = this.#getCtaLocation(link);
+		    // Capture exactly once on accepted initiation; callbacks only enrich mutable commerce fields.
+		    return this.#lockCheckoutIdentity(cleanObject(Object.assign({
 			    attempt_id: this.#createAttemptId(),
 			    checkout_id: this.#createCheckoutId(productSlug, planSlug),
 			    category: "freemius_checkout",
@@ -923,10 +1002,10 @@
 			    coupon: this.#normalizeCoupon(parsed.coupon),
 			    trial: this.#normalizeTrial(parsed.trial),
 			    is_trial: this.#isTrialCheckout(this.#normalizeTrial(parsed.trial)),
-			    cta_location: this.#getCtaLocation(link),
+			    cta_location: cta,
 			    checkout_mode: "modal",
 			    affiliation: this.options.affiliation
-		    });
+		    }, this.#captureSourceContext(cta))));
 	    }
 
 	    static #normalizeEventName(event){
@@ -1152,14 +1231,17 @@
 		    const candidate = this.#buildPurchaseContext(plugin, context, response);
 		    if (candidate && !state.detail){
 			    state.detail = candidate;
-			    Object.assign(context, candidate);
+			    Object.keys(candidate).forEach(function(key){
+				    if (!FooCheckout.#IMMUTABLE_CONTEXT_KEYS.includes(key)) context[key] = candidate[key];
+			    });
 		    }
 		    return state.detail;
 	    }
 
 	    static #storePurchaseContext(detail){
-		    if (typeof sessionStorage === "undefined" || !detail || !detail.checkout_id) return;
+		    if (!detail || !detail.checkout_id) return;
 		    try {
+			    if (typeof sessionStorage === "undefined") return;
 			    sessionStorage.setItem(this.#STORAGE_PREFIX + detail.checkout_id, JSON.stringify(detail));
 			    sessionStorage.setItem(this.#STORAGE_PREFIX + "latest", JSON.stringify(detail));
 		    } catch (err){
@@ -1245,8 +1327,9 @@
 	    }
 
 	    static #getStoredPurchaseContext(checkoutId){
-		    if (!checkoutId || typeof sessionStorage === "undefined") return null;
+		    if (!checkoutId) return null;
 		    try {
+			    if (typeof sessionStorage === "undefined") return null;
 			    const storedValue = sessionStorage.getItem(this.#STORAGE_PREFIX + checkoutId);
 			    if (!storedValue) return null;
 			    const stored = JSON.parse(storedValue);
@@ -1286,10 +1369,11 @@
 			    "attempt_id", "checkout_id", "category", "product_id", "plan_id", "product_slug",
 			    "plan_slug", "product_name", "billing_cycle", "licenses", "coupon", "trial", "is_trial",
 			    "cta_location", "checkout_mode", "affiliation", "checkout_stage", "transaction_id", "value",
-			    "currency", "item_id", "item_name", "item_variant", "item_category", "quantity", "price", "items"
+			    "currency", "item_id", "item_name", "item_variant", "item_category", "quantity", "price", "items",
+			    "source_context_version", "source_page", "source_cohort", "source_created_at"
 		    ];
 		    const allowedItemKeys = ["item_id", "item_name", "item_variant", "item_category", "price", "quantity", "currency"];
-		    if (!this.#hasOnlyOwnKeys(stored, allowedKeys) || !Array.isArray(stored.items) || stored.items.length !== 1) return null;
+		    if (!this.#hasOnlyOwnKeys(stored, allowedKeys) || !this.#isValidStoredSourceContext(stored) || !Array.isArray(stored.items) || stored.items.length !== 1) return null;
 		    const item = stored.items[0];
 		    if (!this.#hasOnlyOwnKeys(item, allowedItemKeys)) return null;
 
@@ -1329,6 +1413,10 @@
 		    return cleanObject({
 			    attempt_id: stored.attempt_id,
 			    checkout_id: stored.checkout_id,
+			    source_context_version: stored.source_context_version,
+			    source_page: stored.source_page,
+			    source_cohort: stored.source_cohort,
+			    source_created_at: stored.source_created_at,
 			    category: "freemius_checkout",
 			    product_id: Number(plugin.product_id),
 			    plan_id: stored.plan_id,
@@ -1397,14 +1485,14 @@
 		    const detail = this.#getThankYouDetailFromUrl();
 		    if (!detail) return;
 		    this.#THANK_YOU_DISPATCHED = true;
-		    if (typeof sessionStorage !== "undefined" && detail.checkout_id){
-			    try {
-				    const sentKey = this.#STORAGE_PREFIX + "thank_you:" + detail.checkout_id;
-				    if (sessionStorage.getItem(sentKey)) return;
-				    sessionStorage.setItem(sentKey, "1");
-			    } catch (err){
-				    // Storage can be disabled by browser privacy settings.
-			    }
+		    try {
+			    if (typeof sessionStorage === "undefined" || !detail.checkout_id) return;
+			    const sentKey = this.#STORAGE_PREFIX + "thank_you:" + detail.checkout_id;
+			    if (sessionStorage.getItem(sentKey)) return;
+			    sessionStorage.setItem(sentKey, "1");
+		    } catch (err){
+			    // Reconstruction is fail-closed if the same-session dedup marker cannot be persisted.
+			    return;
 		    }
 		    this.#dispatchTrackingEvent("freemius_purchase_thank_you_viewed", detail);
 	    }

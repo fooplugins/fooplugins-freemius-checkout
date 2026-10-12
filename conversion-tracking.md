@@ -79,6 +79,12 @@ billing_cycle=none
 
 These defaults are merged into every `FS.Checkout.open()` call. URL-specific values still override defaults, so a checkout link with `?billing_cycle=annual` opens with `annual` even though the saved default is `none`.
 
+## Immutable checkout source (v2)
+
+Every diagnostic and shared/product-scoped lifecycle event carries top-level `source_context_version: 2`, `source_page`, `source_cohort`, and initiation-time `source_created_at`, alongside the same `attempt_id` and `checkout_id`. Source is captured once from the real initiating page's closed pathname projection and controlled CTA, never from queries, redirects, or callbacks. Cancellation/retry/new accepted actions create fresh IDs. `transaction_id` remains the actual validated payment ID, not an initiating ID.
+
+See the [complete wire contract](docs/checkout-cohort-contract.md) for canonical paths, closed cohort precedence, 30-minute reconstruction TTL, blocked-storage behavior, and executable validation. Unknown paths emit `source_page=unknown`; documentation suffixes collapse to `/documentation/`. Invalid/missing/expired stored source suppresses reconstruction rather than inventing attribution.
+
 ## Lifecycle
 
 1. A checkout link is clicked.
@@ -130,7 +136,7 @@ The four `fooplugins_checkout_*` reliability events are global and are emitted o
 
 ## Reliability Diagnostic Payload
 
-All four diagnostics include `attempt_id`, numeric `product_id`, numeric `plan_id`, numeric `licenses`, `billing_cycle`, boolean `is_trial`, controlled `cta_location`, and `checkout_mode=modal`. Opened adds `checkout_load_ms`; failure adds `failure_stage`, `error_code`, and `checkout_load_ms`; cancellation adds `checkout_open_duration_ms`.
+All four diagnostics include `attempt_id`, `checkout_id`, `source_context_version`, `source_page`, `source_cohort`, `source_created_at`, numeric `product_id`, numeric `plan_id`, numeric `licenses`, `billing_cycle`, boolean `is_trial`, controlled `cta_location`, and `checkout_mode=modal`. Opened adds `checkout_load_ms`; failure adds `failure_stage`, `error_code`, and `checkout_load_ms`; cancellation adds `checkout_open_duration_ms`.
 
 `attempt_id` is intentionally high cardinality. Send it with the events for debugging and event pairing, but do not register it as a GA4 custom dimension. No raw exception, stack, email, name, token, license key, or payment data is included.
 
@@ -223,7 +229,7 @@ Required baseline for a product such as FooGallery:
 
 The required-event setup/repair contract ends at those three lifecycle definitions. Destination owners may consume vendor-neutral browser lifecycle events separately, but this plugin's supported setup must never create or repair a `purchase` destination mapping. In particular, mapping both confirmation and thank-you events as `purchase` can double count revenue.
 
-Register aggregate GA4 dimensions for `product_id`, `plan_id`, `licenses`, `cta_location`, `checkout_mode`, `failure_stage`, and `is_trial`, plus a custom metric for `checkout_load_ms`. Leave `attempt_id`, `error_code`, and open duration unregistered. Build the reliability funnel from `fooplugins_checkout_attempt` to `fooplugins_checkout_opened` to the existing valid `purchase` event.
+Register aggregate GA4 dimensions for closed `source_page`, `source_cohort`, configured `product_slug`/`plan_slug`, `licenses`, `cta_location`, `checkout_mode`, `failure_stage`, and `is_trial`, plus a custom metric for `checkout_load_ms`. Never register/use `attempt_id`, `checkout_id`, `transaction_id`, raw Freemius product/plan IDs, or `source_created_at` as reporting/custom dimensions. Initiating IDs are linkage/dedup/debug keys, and the transaction ID remains a transaction field only. Leave `error_code` and open duration unregistered. Build the reliability funnel from `fooplugins_checkout_attempt` to `fooplugins_checkout_opened` to the existing valid `purchase` event.
 
 ### Custom Parameters
 
@@ -233,7 +239,12 @@ Suggested parameters:
 
 | Key | Value |
 | --- | --- |
+| `attempt_id` | `%%e.detail.attempt_id%%` |
 | `checkout_id` | `%%e.detail.checkout_id%%` |
+| `source_context_version` | `%%e.detail.source_context_version%%` |
+| `source_page` | `%%e.detail.source_page%%` |
+| `source_cohort` | `%%e.detail.source_cohort%%` |
+| `source_created_at` | `%%e.detail.source_created_at%%` |
 | `product_slug` | `%%e.detail.product_slug%%` |
 | `plan_slug` | `%%e.detail.plan_slug%%` |
 | `checkout_stage` | `%%e.detail.checkout_stage%%` |

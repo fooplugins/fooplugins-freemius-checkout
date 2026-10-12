@@ -85,7 +85,9 @@ Known CTA locations can be reported with a controlled attribute:
 >Buy</a>
 ```
 
-Supported values are `product_pricing_card`, `compare_hero`, `compare_table`, `compare_plan_section`, and `trial`. Untagged or unknown values are reported as `other`.
+Supported values are `product_pricing_card`, `product_pricing_sticky`, `compare_hero`, `compare_table`, `compare_plan_section`, `trial`, `plan_advisor_result`, and `other`. Untagged or unknown values are reported as `other`.
+
+Checkout events carry immutable, privacy-safe `source_context_version: 2`, `source_page`, `source_cohort`, and initiation-time `source_created_at` alongside `attempt_id` and `checkout_id`. Source is captured from the real initiating page/controlled CTA, never a query string or callback. Same-session thank-you reconstruction expires after 30 minutes and fails closed on missing, inconsistent, or invalid source. See the [wire contract, closed page/cohort allowlists, ID semantics, reporting restrictions, and executable verification](docs/checkout-cohort-contract.md).
 
 ### Freemius Documentation
 
