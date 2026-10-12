@@ -268,6 +268,18 @@ test('absent/corrupt/version-mismatched/PII/contradictory source storage fails c
   }
 });
 
+test('non-producer-shaped stored identity cannot leak arbitrary alphanumeric data', async () => {
+  for (const [field, value] of [['attempt_id', 'JaneDoe'], ['checkout_id', 'JohnSmith']]) {
+    const { runtime, confirmed, key } = await purchaseFixture();
+    const corrupt = snapshot(confirmed); corrupt[field] = value;
+    const changedKey = PREFIX + corrupt.checkout_id;
+    runtime.storage.setItem(changedKey, JSON.stringify(corrupt));
+    const url = new URL(runtime.href); url.searchParams.set('fs_checkout_id', corrupt.checkout_id);
+    const thanks = createRuntime({ now: NOW, url: url.toString(), storage: runtime.storage });
+    assert.equal(events(thanks, 'freemius_purchase_thank_you_viewed').length, 0, field);
+  }
+});
+
 test('direct/spoofed URL and wrong navigation cannot invent source or purchase', async () => {
   const { runtime } = await purchaseFixture();
   const direct = createRuntime({ now: NOW, url: runtime.href, storage: new MemoryStorage() });

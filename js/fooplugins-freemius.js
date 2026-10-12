@@ -1364,6 +1364,19 @@
 		    return false;
 	    }
 
+	    // Match only identities this producer creates, not generic free-text tokens.
+	    static #isGeneratedAttemptId(value){
+		    return isString(value) && (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value) || /^attempt-[a-z0-9]{8,11}-[a-z0-9]{1,10}$/.test(value));
+	    }
+
+	    static #isGeneratedCheckoutId(plugin, value){
+		    if (!isString(value)) return false;
+		    const prefix = this.#getProductSlug(plugin) + "-";
+		    if (!value.startsWith(prefix)) return false;
+		    const tail = value.substring(prefix.length).match(/^(.+)-[a-z0-9]{8,11}-[a-z0-9]{1,8}$/);
+		    return !!tail && this.#isConfiguredPlanSlug(plugin, tail[1]);
+	    }
+
 	    static #revalidateStoredPurchaseContext(plugin, stored){
 		    const allowedKeys = [
 			    "attempt_id", "checkout_id", "category", "product_id", "plan_id", "product_slug",
@@ -1407,7 +1420,7 @@
 			    item.item_variant !== stored.plan_slug || item.item_category !== "Plugin" ||
 			    item.price !== unitPrice || item.quantity !== quantity || item.currency !== currency
 		    ) return null;
-		    if (!isString(stored.attempt_id) || !/^[A-Za-z0-9-]{1,100}$/.test(stored.attempt_id) || !isString(stored.checkout_id) || !/^[A-Za-z0-9-]{1,200}$/.test(stored.checkout_id)) return null;
+		    if (!this.#isGeneratedAttemptId(stored.attempt_id) || !this.#isGeneratedCheckoutId(plugin, stored.checkout_id)) return null;
 		    if (stored.affiliation !== undefined && stored.affiliation !== this.options.affiliation) return null;
 
 		    return cleanObject({

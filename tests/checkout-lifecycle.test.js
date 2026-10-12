@@ -134,7 +134,7 @@ function createRuntime(options = {}) {
     crypto: {
       randomUUID() {
         uuidCounter += 1;
-        return `attempt-${uuidCounter}`;
+        return `00000000-0000-4000-8000-${uuidCounter.toString(16).padStart(12, '0')}`;
       }
     },
     performance: { now: () => 100 },
